@@ -346,7 +346,7 @@ describe("HTTP mock rule handling", function () {
 
     it("should allow mocking the body with contents from a file", async () => {
         await server.get('/mocked-endpoint').thenFromFile(200,
-            path.join(__dirname, '..', 'fixtures', 'response-file.txt')
+            path.join(__dirname.split('\\').join('/'), '..', 'fixtures', 'response-file.txt')
         );
 
         let response = await fetch(server.urlFor("/mocked-endpoint"));
@@ -359,7 +359,7 @@ describe("HTTP mock rule handling", function () {
 
     it("should allow mocking the body with contents from a file, with headers & status message", async () => {
         await server.get('/mocked-endpoint').thenFromFile(200, "mock status",
-            path.join(__dirname, '..', 'fixtures', 'response-file.txt'),
+            path.join(__dirname.split('\\').join('/'), '..', 'fixtures', 'response-file.txt'),
             { "Content-Type": "text/mocked" }
         );
 
@@ -379,7 +379,7 @@ describe("HTTP mock rule handling", function () {
     it("should not allow setting pseudoheaders when mocking the body from a file", async () => {
         expect(() =>
             server.get('/mocked-endpoint').thenFromFile(200, "mock status",
-                path.join(__dirname, '..', 'fixtures', 'response-file.txt'),
+                path.join(__dirname.split('\\').join('/'), '..', 'fixtures', 'response-file.txt'),
                 { ':status': '200' }
             )
         ).to.throw("Cannot set custom :status pseudoheader values");
@@ -387,7 +387,7 @@ describe("HTTP mock rule handling", function () {
 
     it("should return a clear error when mocking the body with contents from a non-existent file", async () => {
         await server.get('/mocked-endpoint').thenFromFile(200,
-            path.join(__dirname, '..', 'fixtures', 'non-existent-file.txt')
+            path.join(__dirname.split('\\').join('/'), '..', 'fixtures', 'non-existent-file.txt')
         );
 
         let response = await fetch(server.urlFor("/mocked-endpoint"));
