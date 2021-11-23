@@ -47,25 +47,37 @@ export class MethodMatcher extends Serializable implements RequestMatcher {
     constructor(methods: Method | [Method, ...Method[]]) {
         super();
         this.methods = Array.isArray(methods) ? [...methods] : [methods];
-
-        if (this.methods.length > 1) {
-            this.matches = function matches(request: OngoingRequest) {
-                return this.methods.includes(request.method as Method);
-            }
-        } else {
-            const method = this.methods[0];
-            this.matches = function matches(request: OngoingRequest) {
-                return request.method === method;
-            }
-        }
+        this.optimize();
     }
 
-    matches(request: OngoingRequest) {
-        return this.methods.includes(request.method as Method);
+    matches(request: OngoingRequest): boolean {
+        throw new Error('not optimized');
     }
 
     explain() {
         return this.methods.length > 1 ? `making ${this.methods.join(' or ')}` : `making ${this.methods[0]}`;
+    }
+
+    /**
+     * @internal
+     */
+    static deserialize(...args: [any, any, any]): MethodMatcher {
+        const matcher: MethodMatcher = Serializable.deserialize.apply(MethodMatcher, args);
+        matcher.optimize();
+        return matcher;
+    }
+    
+    private optimize() {
+        if (this.methods.length === 1) {
+            const method = this.methods[0];
+            this.matches = function matches(request: OngoingRequest) {
+                return request.method === method;
+            };
+        } else {
+            this.matches = function matches(request: OngoingRequest) {
+                return this.methods.includes(request.method as Method);
+            };
+        }
     }
 }
 
