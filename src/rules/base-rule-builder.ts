@@ -45,7 +45,7 @@ export abstract class BaseRuleBuilder {
      * Mock rule builders should be constructed through the Mockttp instance you're
      * using, not directly. You shouldn't ever need to call this constructor.
      */
-    constructor(method?: Method, path?: string | RegExp) {
+    constructor(method?: Method | [Method, ...Method[]], path?: string | RegExp) {
         if (method === undefined && path === undefined) {
             this.matchers.push(new WildcardMatcher());
             return;
@@ -70,6 +70,14 @@ export abstract class BaseRuleBuilder {
      */
     forHost(host: string): this {
         this.matchers.push(new HostMatcher(host));
+        return this;
+    }
+
+    /**
+     * Match only requests with given method or methods
+     */
+    withMethod(method: Method | [Method, ...Method[]]): this {
+        this.matchers.push(new MethodMatcher(method));
         return this;
     }
 

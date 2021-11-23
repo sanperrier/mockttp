@@ -47,12 +47,12 @@ export class RequestRuleBuilder extends BaseRuleBuilder {
      */
     constructor(addRule: (rule: RequestRuleData) => Promise<MockedEndpoint>)
     constructor(
-        method: Method,
+        method: Method | [Method, ...Method[]],
         path: string | RegExp | undefined,
         addRule: (rule: RequestRuleData) => Promise<MockedEndpoint>
     )
     constructor(
-        methodOrAddRule: Method | ((rule: RequestRuleData) => Promise<MockedEndpoint>),
+        methodOrAddRule: Method | [Method, ...Method[]] | ((rule: RequestRuleData) => Promise<MockedEndpoint>),
         path?: string | RegExp,
         addRule?: (rule: RequestRuleData) => Promise<MockedEndpoint>
     ) {

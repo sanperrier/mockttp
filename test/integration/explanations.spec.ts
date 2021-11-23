@@ -23,11 +23,11 @@ describe("Mockttp explanation messages", function () {
         let responseText = await response.text();
 
         expect(responseText).to.include(`
-Match requests making GETs for /endpoint, and then respond with status 200 and body "1", once (seen 0).
-Match requests making GETs for /endpoint, and then respond with status 200 and body "2/3", twice (seen 0).
-Match requests making GETs for /endpoint, and then respond with status 200 and body "4/5/6", thrice (seen 0).
-Match requests making GETs for /endpoint, and then respond with status 200 and body "7/8/9/10", 4 times (seen 0).
-Match requests making GETs for /endpoint, and then respond with status 200 and body "forever", always (seen 0).
+Match requests making GET for /endpoint, and then respond with status 200 and body "1", once (seen 0).
+Match requests making GET for /endpoint, and then respond with status 200 and body "2/3", twice (seen 0).
+Match requests making GET for /endpoint, and then respond with status 200 and body "4/5/6", thrice (seen 0).
+Match requests making GET for /endpoint, and then respond with status 200 and body "7/8/9/10", 4 times (seen 0).
+Match requests making GET for /endpoint, and then respond with status 200 and body "forever", always (seen 0).
 `);
     });
 
@@ -46,11 +46,11 @@ Match requests making GETs for /endpoint, and then respond with status 200 and b
         let responseText = await response.text();
 
         expect(responseText).to.include(`
-Match requests making GETs for /endpoint, and then respond with status 200 and body "1", once (done).
-Match requests making GETs for /endpoint, and then respond with status 200 and body "2/3", twice (done).
-Match requests making GETs for /endpoint, and then respond with status 200 and body "4/5/6", thrice (done).
-Match requests making GETs for /endpoint, and then respond with status 200 and body "7/8/9/10", 4 times (seen 2).
-Match requests making GETs for /endpoint, and then respond with status 200 and body "forever", always (seen 0).
+Match requests making GET for /endpoint, and then respond with status 200 and body "1", once (done).
+Match requests making GET for /endpoint, and then respond with status 200 and body "2/3", twice (done).
+Match requests making GET for /endpoint, and then respond with status 200 and body "4/5/6", thrice (done).
+Match requests making GET for /endpoint, and then respond with status 200 and body "7/8/9/10", 4 times (seen 2).
+Match requests making GET for /endpoint, and then respond with status 200 and body "forever", always (seen 0).
 `);
     });
 
@@ -71,11 +71,11 @@ Match requests making GETs for /endpoint, and then respond with status 200 and b
         expect(text).to.include(`No rules were found matching this request.`);
         expect(text).to.include(`The configured rules are:
 Match requests for anything with headers including {"h":"v"}, and then respond with status 200 and a stream of response data.
-Match requests making GETs matching //endpointA/\\d+/, and then respond with status 200 and body "nice request!", once (done).
-Match requests making POSTs, for /endpointB, and with form data including {"key":"value"}, and then respond with status 500.
-Match requests making POSTs, for /endpointC, and with a JSON body equivalent to {"key":"value"}, and then respond with status 500.
-Match requests making PUTs, for /endpointD, and with a query including {"a":"1"}, and then close the connection, always (seen 0).
-Match requests making PUTs, for /endpointE, for host abc.com, and with a query exactly matching \`?\`, and then time out (never respond).
+Match requests making GET matching //endpointA/\\d+/, and then respond with status 200 and body "nice request!", once (done).
+Match requests making POST, for /endpointB, and with form data including {"key":"value"}, and then respond with status 500.
+Match requests making POST, for /endpointC, and with a JSON body equivalent to {"key":"value"}, and then respond with status 500.
+Match requests making PUT, for /endpointD, and with a query including {"a":"1"}, and then close the connection, always (seen 0).
+Match requests making PUT, for /endpointE, for host abc.com, and with a query exactly matching \`?\`, and then time out (never respond).
 Match websockets for anything, and then forward the websocket to google.com.
 `);
     });
@@ -88,8 +88,8 @@ Match websockets for anything, and then forward the websocket to google.com.
         let text = await response.text();
 
         expect(text).to.include(`The configured rules are:
-Match requests making POSTs for /endpointA, and then respond using provided callback.
-Match requests making POSTs for /endpointB, and then respond using provided callback (handleRequest).
+Match requests making POST for /endpointA, and then respond using provided callback.
+Match requests making POST for /endpointB, and then respond using provided callback (handleRequest).
 `);
     });
 
@@ -180,16 +180,16 @@ as a proxy, instead of making requests to it directly`);
             const util = require('util');
             const explanation = util.inspect(endpoints);
             expect(explanation).to.include(
-                'Match requests making GETs for /endpoint, and then respond with status 200 and body "first response", twice (seen 1).'
+                'Match requests making GET for /endpoint, and then respond with status 200 and body "first response", twice (seen 1).'
             );
             expect(explanation).to.include(
-                'Match requests making GETs for /endpoint, and then respond with status 200 and body "second response".'
+                'Match requests making GET for /endpoint, and then respond with status 200 and body "second response".'
             );
         } else {
             const explanations = endpoints.map(p => (p as any).explanation);
             expect(explanations).to.deep.equal([
-                'Match requests making GETs for /endpoint, and then respond with status 200 and body "first response", twice.',
-                'Match requests making GETs for /endpoint, and then respond with status 200 and body "second response".'
+                'Match requests making GET for /endpoint, and then respond with status 200 and body "first response", twice.',
+                'Match requests making GET for /endpoint, and then respond with status 200 and body "second response".'
             ]);
         }
     });

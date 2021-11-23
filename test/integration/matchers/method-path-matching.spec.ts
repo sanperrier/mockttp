@@ -1,6 +1,6 @@
 import { stripIndent } from "common-tags";
 
-import { getLocal } from "../../..";
+import { getLocal, Method as TMethod } from "../../..";
 import { expect, fetch, browserOnly } from "../../test-utils";
 
 describe("Method & path request matching", function () {
@@ -10,7 +10,7 @@ describe("Method & path request matching", function () {
     afterEach(() => server.stop());
 
     type Method = 'get' | 'post' | 'put' | 'delete' | 'patch' | 'head' | 'options';
-    let methods: Method[] = [ 'get', 'post', 'put', 'delete', 'patch', 'head', 'options' ];
+    let methods: Method[] = ['get', 'post', 'put', 'delete', 'patch', 'head', 'options'];
 
     browserOnly(() => {
         methods = methods.filter((m) => m !== 'options');
@@ -31,12 +31,13 @@ responses by hand.`);
         });
     });
 
-    methods.forEach((methodName: Method) => {
-        it(`should match ${methodName.toUpperCase()} requests`, async () => {
+    methods.forEach((methodName, i) => {
+        const method = methodName.toUpperCase() as TMethod;
+        it(`should match ${method} requests`, async () => {
             await server[methodName]('/').thenReply(200, methodName);
 
             let result = await fetch(server.url, {
-                method: methodName.toUpperCase(),
+                method,
             });
 
             await expect(result).to.have.status(200);
@@ -45,6 +46,36 @@ responses by hand.`);
             } else {
                 await expect(result).to.have.responseText('');
             }
+        });
+
+        const otherMethods = methods.slice(i + 1);
+        otherMethods.forEach((otherMethodName, i) => {
+            const otherMethod = otherMethodName.toUpperCase() as TMethod;
+            it(`should match ${method}/${otherMethod} requests`, async () => {
+                await server.anyRequest().withMethod([method, otherMethod]).thenReply(200, `${method}/${otherMethod}`);
+
+                let result = await fetch(server.url, {
+                    method,
+                });
+
+                await expect(result).to.have.status(200);
+                if (methodName !== 'head') {
+                    await expect(result).to.have.responseText(`${method}/${otherMethod}`);
+                } else {
+                    await expect(result).to.have.responseText('');
+                }
+
+                result = await fetch(server.url, {
+                    method: otherMethod,
+                });
+
+                await expect(result).to.have.status(200);
+                if (otherMethodName !== 'head') {
+                    await expect(result).to.have.responseText(`${method}/${otherMethod}`);
+                } else {
+                    await expect(result).to.have.responseText('');
+                }
+            });
         });
     });
 

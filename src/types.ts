@@ -4,15 +4,14 @@ import { EventEmitter } from 'events';
 
 export const DEFAULT_STANDALONE_PORT = 45454;
 
-export enum Method {
-    GET,
-    POST,
-    PUT,
-    DELETE,
-    PATCH,
-    HEAD,
-    OPTIONS
-}
+export type Method =
+    | 'GET'
+    | 'POST'
+    | 'PUT'
+    | 'DELETE'
+    | 'PATCH'
+    | 'HEAD'
+    | 'OPTIONS';
 
 export interface Headers {
     // An arbitrary set of headers that are known to

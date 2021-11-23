@@ -40,22 +40,32 @@ export class WildcardMatcher extends Serializable implements RequestMatcher {
         return 'for anything';
     }
 }
-
 export class MethodMatcher extends Serializable implements RequestMatcher {
     readonly type = 'method';
+    public methods: [Method, ...Method[]];
 
-    constructor(
-        public method: Method
-    ) {
+    constructor(methods: Method | [Method, ...Method[]]) {
         super();
+        this.methods = Array.isArray(methods) ? [...methods] : [methods];
+
+        if (this.methods.length > 1) {
+            this.matches = function matches(request: OngoingRequest) {
+                return this.methods.includes(request.method as Method);
+            }
+        } else {
+            const method = this.methods[0];
+            this.matches = function matches(request: OngoingRequest) {
+                return request.method === method;
+            }
+        }
     }
 
     matches(request: OngoingRequest) {
-        return request.method === Method[this.method];
+        return this.methods.includes(request.method as Method);
     }
 
     explain() {
-        return `making ${Method[this.method]}s`;
+        return this.methods.length > 1 ? `making ${this.methods.join(' or ')}` : `making ${this.methods[0]}`;
     }
 }
 

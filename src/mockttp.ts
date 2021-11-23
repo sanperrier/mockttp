@@ -601,27 +601,27 @@ export abstract class AbstractMockttp {
     }
 
     get(url?: string | RegExp): RequestRuleBuilder {
-        return new RequestRuleBuilder(Method.GET, url, this.addRequestRule);
+        return new RequestRuleBuilder('GET', url, this.addRequestRule);
     }
 
     post(url?: string | RegExp): RequestRuleBuilder {
-        return new RequestRuleBuilder(Method.POST, url, this.addRequestRule);
+        return new RequestRuleBuilder('POST', url, this.addRequestRule);
     }
 
     put(url?: string | RegExp): RequestRuleBuilder {
-        return new RequestRuleBuilder(Method.PUT, url, this.addRequestRule);
+        return new RequestRuleBuilder('PUT', url, this.addRequestRule);
     }
 
     delete(url?: string | RegExp): RequestRuleBuilder {
-        return new RequestRuleBuilder(Method.DELETE, url, this.addRequestRule);
+        return new RequestRuleBuilder('DELETE', url, this.addRequestRule);
     }
 
     patch(url?: string | RegExp): RequestRuleBuilder {
-        return new RequestRuleBuilder(Method.PATCH, url, this.addRequestRule);
+        return new RequestRuleBuilder('PATCH', url, this.addRequestRule);
     }
 
     head(url?: string | RegExp): RequestRuleBuilder {
-        return new RequestRuleBuilder(Method.HEAD, url, this.addRequestRule);
+        return new RequestRuleBuilder('HEAD', url, this.addRequestRule);
     }
 
     options(url?: string | RegExp): RequestRuleBuilder {
@@ -634,7 +634,7 @@ export abstract class AbstractMockttp {
                 }responses by hand.
             `);
         }
-        return new RequestRuleBuilder(Method.OPTIONS, url, this.addRequestRule);
+        return new RequestRuleBuilder('OPTIONS', url, this.addRequestRule);
     }
 
     anyWebSocket(): WebSocketRuleBuilder {
