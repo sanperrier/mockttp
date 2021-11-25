@@ -121,7 +121,7 @@ export class SimpleHandler extends Serializable implements RequestHandler {
 
     explain() {
         return `respond with status ${this.status}` +
-            (this.statusMessage ? ` (${this.statusMessage})`: "") +
+            (this.statusMessage ? ` (${this.statusMessage})` : "") +
             (this.headers ? `, headers ${JSON.stringify(this.headers)}` : "") +
             (this.data ? ` and body "${this.data}"` : "");
     }
@@ -134,7 +134,7 @@ export class SimpleHandler extends Serializable implements RequestHandler {
         response.writeHead(this.status, this.statusMessage);
 
         if (isSerializedBuffer(this.data)) {
-            this.data = Buffer.from(<any> this.data);
+            this.data = Buffer.from(<any>this.data);
         }
 
         response.end(this.data || "");
@@ -244,11 +244,13 @@ export class CallbackHandler extends Serializable implements RequestHandler {
             const callbackResult = await channel.request<
                 CallbackRequestMessage,
                 WithSerializedBodyBuffer<CallbackResponseMessageResult> | 'close'
-            >({ args: [
-                (version || -1) >= 2
-                    ? withSerializedBodyReader(request)
-                    : request // Backward compat: old handlers
-            ] });
+            >({
+                args: [
+                    (version || -1) >= 2
+                        ? withSerializedBodyReader(request)
+                        : request // Backward compat: old handlers
+                ]
+            });
 
             if (typeof callbackResult === 'string') {
                 return callbackResult;
@@ -332,22 +334,22 @@ export class StreamHandler extends Serializable implements RequestHandler {
             transform: function (this: Transform, chunk, _encoding, callback) {
                 let serializedEventData: StreamHandlerEventMessage | false =
                     _.isString(chunk) ? { type: 'string', value: chunk } :
-                    _.isBuffer(chunk) ? { type: 'buffer', value: chunk.toString('base64') } :
-                    (_.isArrayBuffer(chunk) || _.isTypedArray(chunk)) ? { type: 'arraybuffer', value: encodeBase64(<any> chunk) } :
-                    _.isNil(chunk) && { type: 'nil' };
+                        _.isBuffer(chunk) ? { type: 'buffer', value: chunk.toString('base64') } :
+                            (_.isArrayBuffer(chunk) || _.isTypedArray(chunk)) ? { type: 'arraybuffer', value: encodeBase64(<any>chunk) } :
+                                _.isNil(chunk) && { type: 'nil' };
 
                 if (!serializedEventData) {
                     callback(new Error(`Can't serialize streamed value: ${chunk.toString()}. Streaming must output strings, buffers or array buffers`));
                 }
 
-                callback(undefined, <StreamHandlerMessage> {
+                callback(undefined, <StreamHandlerMessage>{
                     event: 'data',
                     content: serializedEventData
                 });
             },
 
-            flush: function(this: Transform, callback) {
-                this.push(<StreamHandlerMessage> {
+            flush: function (this: Transform, callback) {
+                this.push(<StreamHandlerMessage>{
                     event: 'end'
                 });
                 callback();
@@ -373,9 +375,9 @@ export class StreamHandler extends Serializable implements RequestHandler {
 
                 let deserializedEventData = content && (
                     content.type === 'string' ? content.value :
-                    content.type === 'buffer' ? Buffer.from(content.value, 'base64') :
-                    content.type === 'arraybuffer' ? Buffer.from(decodeBase64(content.value)) :
-                    content.type === 'nil' && undefined
+                        content.type === 'buffer' ? Buffer.from(content.value, 'base64') :
+                            content.type === 'arraybuffer' ? Buffer.from(decodeBase64(content.value)) :
+                                content.type === 'nil' && undefined
                 );
 
                 if (event === 'data' && deserializedEventData) {
@@ -419,7 +421,7 @@ export class FileHandler extends Serializable implements RequestHandler {
 
     explain() {
         return `respond with status ${this.status}` +
-            (this.statusMessage ? ` (${this.statusMessage})`: "") +
+            (this.statusMessage ? ` (${this.statusMessage})` : "") +
             (this.headers ? `, headers ${JSON.stringify(this.headers)}` : "") +
             (this.filePath ? ` and body from file ${this.filePath}` : "");
     }
@@ -1095,7 +1097,7 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
         }
 
         // Check if this request is a request loop:
-        if (isSocketLoop(this.outgoingSockets, (<any> clientReq).socket)) {
+        if (isSocketLoop(this.outgoingSockets, (<any>clientReq).socket)) {
             throw new Error(oneLine`
                 Passthrough loop detected. This probably means you're sending a request directly
                 to a passthrough endpoint, which is forwarding it to the target URL, which is a
@@ -1188,7 +1190,7 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
 
             if (modifiedReq?.response) {
                 if (modifiedReq.response === 'close') {
-                    const socket: net.Socket = (<any> clientReq).socket;
+                    const socket: net.Socket = (<any>clientReq).socket;
                     socket.end();
                     throw new AbortError('Connection closed (intentionally)');
                 } else {
@@ -1291,11 +1293,11 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
         let makeRequest = (
             shouldTryH2Upstream
                 ? h2Client.auto
-            // HTTP/1 + TLS
-            : protocol === 'https:'
-                ? https.request
-            // HTTP/1 plaintext:
-                : http.request
+                // HTTP/1 + TLS
+                : protocol === 'https:'
+                    ? https.request
+                    // HTTP/1 plaintext:
+                    : http.request
         ) as typeof https.request;
 
         if (isH2Downstream && shouldTryH2Upstream) {
@@ -1776,7 +1778,7 @@ export class CloseConnectionHandler extends Serializable implements RequestHandl
     }
 
     async handle(request: OngoingRequest) {
-        const socket: net.Socket = (<any> request).socket;
+        const socket: net.Socket = (<any>request).socket;
         socket.end();
         throw new AbortError('Connection closed (intentionally)');
     }
@@ -1791,7 +1793,7 @@ export class TimeoutHandler extends Serializable implements RequestHandler {
 
     async handle() {
         // Do nothing, leaving the socket open but never sending a response.
-        return new Promise<void>(() => {});
+        return new Promise<void>(() => { });
     }
 }
 
