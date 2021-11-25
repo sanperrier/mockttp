@@ -2,7 +2,7 @@ import * as _ from "lodash";
 import * as WebSocket from 'isomorphic-ws';
 
 import { getLocal, matchers, handlers, webSocketHandlers } from "../..";
-import { expect, fetch } from "../test-utils";
+import { expect, fetch, nodeOnly } from "../test-utils";
 
 describe("Mockttp rule building", function () {
     let server = getLocal();
@@ -67,7 +67,7 @@ describe("Mockttp rule building", function () {
         expect(afterRemoval.status).to.be.equal(404);
         expect(await afterRemoval.text()).to.be.equal('unmatched');
 
-        expect((await endpoint.getSeenRequests()).length).to.be.equal(1);
+        nodeOnly(async () => expect((await endpoint.getSeenRequests()).length).to.be.equal(1));
     });
 
     it("should allow completely replacing rules", async () => {
