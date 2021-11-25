@@ -1,7 +1,7 @@
 import { isString } from "lodash";
 import { MaybePromise } from "../main";
 
-import { CompletedRequest, Method } from "../types";
+import { CompletedRequest, InitiatedRequest, Method } from "../types";
 
 import {
     RuleCompletionChecker,
@@ -178,7 +178,7 @@ export abstract class BaseRuleBuilder {
      * Match only requests when the callback returns true
      */
     matching(
-        content: (request: CompletedRequest) => MaybePromise<boolean>
+        content: (initiatedRequest: InitiatedRequest, request: Promise<CompletedRequest>) => MaybePromise<boolean>
     ): this {
         this.matchers.push(new CallbackMatcher(content));
         return this;

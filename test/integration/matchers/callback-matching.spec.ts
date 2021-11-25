@@ -1,4 +1,4 @@
-import { CompletedRequest, getLocal } from "../../..";
+import { CompletedRequest, getLocal, InitiatedRequest } from "../../..";
 import { expect, fetch } from "../../test-utils";
 
 describe("Request callback matching", function () {
@@ -8,9 +8,11 @@ describe("Request callback matching", function () {
     afterEach(() => server.stop());
 
     it("should match requests with the callback reports true", async () => {
-        let callbackRequest: CompletedRequest | undefined;
-        await server.post('/abc').matching((request) => {
-            callbackRequest = request;
+        let initiatedRequest: InitiatedRequest | undefined;
+        let completedRequestPromise: Promise<CompletedRequest> | undefined;
+        await server.post('/abc').matching((initialied, request) => {
+            initiatedRequest = initialied;
+            completedRequestPromise = request;
             return true;
         }).thenReply(200, 'Mocked response');
 
@@ -19,14 +21,18 @@ describe("Request callback matching", function () {
             body: '{"username": "test", "passwd": "test"}'
         });
 
+        const completedRequest = await completedRequestPromise;
         await expect(result).to.have.responseText('Mocked response');
-        expect(callbackRequest).to.haveOwnProperty('protocol', 'http');
-        expect(callbackRequest).to.haveOwnProperty('path', '/abc');
-        expect(await callbackRequest?.body?.getJson()).to.deep.equal({ username: "test", passwd: "test" });
+        expect(initiatedRequest).to.haveOwnProperty('protocol', 'http');
+        expect(completedRequest).to.haveOwnProperty('protocol', 'http');
+        expect(initiatedRequest).to.haveOwnProperty('path', '/abc');
+        expect(completedRequest).to.haveOwnProperty('path', '/abc');
+        expect(await completedRequest?.body?.getJson()).to.deep.equal({ username: "test", passwd: "test" });
     });
 
     it("should match requests with an async callback", async () => {
-        await server.post('/abc').matching(async (request) => {
+        await server.post('/abc').matching(async (_, requestPromise) => {
+            const request = await requestPromise;
             const body = await request?.body?.getJson() as any;
             return body?.username === 'test';
         }).thenReply(200, 'Mocked response');

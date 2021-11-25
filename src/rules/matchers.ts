@@ -2,13 +2,14 @@ import * as _ from 'lodash';
 import * as url from 'url';
 import { oneLine } from 'common-tags';
 
-import { CompletedRequest, Method, Explainable, OngoingRequest } from "../types";
+import { CompletedRequest, Method, Explainable, OngoingRequest, InitiatedRequest } from "../types";
 import {
     isAbsoluteUrl,
     getPathFromAbsoluteUrl,
     isRelativeUrl,
     getUrlWithoutProtocol,
-    waitForCompletedRequest
+    waitForCompletedRequest,
+    buildInitiatedRequest
 } from '../util/request-utils';
 import { Serializable, ClientServerChannel, withDeserializedBodyReader, withSerializedBodyReader } from "../util/serialization";
 import { MaybePromise, Replace } from '../util/type-utils';
@@ -401,14 +402,14 @@ export class CallbackMatcher extends Serializable implements RequestMatcher {
     readonly type = 'callback';
 
     constructor(
-        public callback: (request: CompletedRequest) => MaybePromise<boolean>
+        public callback: (initiatedRequest: InitiatedRequest, request: Promise<CompletedRequest>) => MaybePromise<boolean>,
+        public waitForCompletedRequest = true
     ) {
         super();
     }
 
     async matches(request: OngoingRequest) {
-        const completedRequest = await waitForCompletedRequest(request);
-        return this.callback(completedRequest);
+        return this.callback(buildInitiatedRequest(request), waitForCompletedRequest(request));
     }
 
     explain() {
@@ -419,13 +420,15 @@ export class CallbackMatcher extends Serializable implements RequestMatcher {
      * @internal
      */
     serialize(channel: ClientServerChannel): SerializedCallbackMatcherData {
-        channel.onRequest<Replace<CompletedRequest, 'body', string>, boolean>(async (streamMsg) => {
-            const request = withDeserializedBodyReader(streamMsg);
-
-            const callbackResult = await this.callback.call(null, request);
-
-            return callbackResult;
-        });
+        channel.onRequest<
+            {
+                initiatedRequest: InitiatedRequest,
+                request: Replace<CompletedRequest, 'body', string>
+            }
+            , boolean
+        >(async ({ initiatedRequest, request }) =>
+            this.callback.call(null, initiatedRequest, Promise.resolve(withDeserializedBodyReader(request)))
+        );
 
         return { type: this.type, name: this.callback.name, version: 1 };
     }
@@ -437,14 +440,17 @@ export class CallbackMatcher extends Serializable implements RequestMatcher {
         { name }: SerializedCallbackMatcherData,
         channel: ClientServerChannel
     ): CallbackMatcher {
-        const rpcCallback = async (request: CompletedRequest) => {
-            const callbackResult = channel.request<
-                Replace<CompletedRequest, 'body', string>,
+        const rpcCallback = async (initiatedRequest: InitiatedRequest, request: Promise<CompletedRequest>) =>
+            channel.request<
+                {
+                    initiatedRequest: InitiatedRequest,
+                    request: Replace<CompletedRequest, 'body', string>
+                },
                 boolean
-            >(withSerializedBodyReader(request) as any);
-
-            return callbackResult;
-        };
+            >({
+                initiatedRequest,
+                request: withSerializedBodyReader(await request)
+            });
         // Pass across the name from the real callback, for explain()
         Object.defineProperty(rpcCallback, 'name', { value: name });
 
