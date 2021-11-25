@@ -383,6 +383,11 @@ export interface Mockttp {
     addRequestRules(...ruleData: RequestRuleData[]): Promise<MockedEndpoint[]>;
 
     /**
+     * Removes rules with given ids.
+     */
+    removeRequestRules: (...ruleData: Array<{ id: string }>) => Promise<void>
+
+    /**
      * Set the given rules as the only rules on the server, replacing any
      * existing rules (except websocket rules).
      *
@@ -577,6 +582,10 @@ export abstract class AbstractMockttp {
     abstract addRequestRules: (...ruleData: RequestRuleData[]) => Promise<MockedEndpoint[]>;
     addRequestRule = (rule: RequestRuleData) =>
         this.addRequestRules(rule).then((rules) => rules[0]);
+
+    abstract removeRequestRules: (...ruleData: Array<{ id: string }>) => Promise<void>;
+    removeRequestRule = (rule: { id: string }) =>
+        this.removeRequestRules(rule);
 
     abstract setRequestRules(...ruleData: RequestRuleData[]): Promise<MockedEndpoint[]>;
     abstract setFallbackRequestRule(ruleData: RequestRuleData): Promise<MockedEndpoint>;

@@ -235,6 +235,9 @@ export function buildStandaloneModel(
                     deserializeRuleData(rule, stream, ruleParameters)
                 ));
             },
+            removeRules: async (__: any, { input }: { input: Array<string> }) => {
+                await mockServer.removeRequestRules(...input.map(id => ({ id })));
+            },
             setRules: async (__: any, { input }: { input: Array<Serialized<RequestRuleData>> }) => {
                 return mockServer.setRequestRules(...input.map((rule) =>
                     deserializeRuleData(rule, stream, ruleParameters)

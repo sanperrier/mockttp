@@ -53,6 +53,23 @@ describe("Mockttp rule building", function () {
         expect(secondResponseText).to.include('second mock response');
     });
 
+    it("should allow removing exiting rule", async () => {
+        const endpoint = await server.get('/endpoint').thenReply(200, 'to be removed');
+        await server.unmatchedRequest().thenReply(404, 'unmatched');
+
+        const beforeRemoval = await fetch(server.urlFor('/endpoint'));
+        expect(beforeRemoval.status).to.be.equal(200);
+        expect(await beforeRemoval.text()).to.be.equal('to be removed');
+
+        await server.removeRequestRules(endpoint);
+
+        const afterRemoval = await fetch(server.urlFor('/endpoint'));
+        expect(afterRemoval.status).to.be.equal(404);
+        expect(await afterRemoval.text()).to.be.equal('unmatched');
+
+        expect((await endpoint.getSeenRequests()).length).to.be.equal(1);
+    });
+
     it("should allow completely replacing rules", async () => {
         await server.addRequestRules({
             matchers: [new matchers.SimplePathMatcher('/endpoint')],

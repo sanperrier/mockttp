@@ -208,18 +208,30 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
         return this.address.port;
     }
 
-    public setRequestRules = (...ruleData: RequestRuleData[]): Promise<ServerMockedEndpoint[]> => {
-        this.requestRules.forEach(r => r.dispose());
-        this.requestRules = ruleData.map((ruleDatum) => new RequestRule(ruleDatum));
-        return Promise.resolve(this.requestRules.map(r => new ServerMockedEndpoint(r)));
-    }
-
     public addRequestRules = (...ruleData: RequestRuleData[]): Promise<ServerMockedEndpoint[]> => {
         return Promise.resolve(ruleData.map((ruleDatum) => {
             const rule = new RequestRule(ruleDatum);
             this.requestRules.push(rule);
             return new ServerMockedEndpoint(rule);
         }));
+    }
+
+    public removeRequestRules = async (...ruleData: Array<{ id: string }>): Promise<void> => {
+        const ids = new Set(ruleData.map(d => d.id));
+
+        for (let i = 0; i < this.requestRules.length && ids.size; ++i) {
+            const rule = this.requestRules[i];
+            if (rule && ids.delete(rule.id)) {
+                rule.dispose();
+                this.requestRules.splice(i--, 1);
+            }
+        }
+    }
+
+    public setRequestRules = (...ruleData: RequestRuleData[]): Promise<ServerMockedEndpoint[]> => {
+        this.requestRules.forEach(r => r.dispose());
+        this.requestRules = ruleData.map((ruleDatum) => new RequestRule(ruleDatum));
+        return Promise.resolve(this.requestRules.map(r => new ServerMockedEndpoint(r)));
     }
 
     public setFallbackRequestRule = async (ruleDatum: RequestRuleData): Promise<ServerMockedEndpoint> => {

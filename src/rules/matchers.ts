@@ -66,7 +66,7 @@ export class MethodMatcher extends Serializable implements RequestMatcher {
         matcher.optimize();
         return matcher;
     }
-    
+
     private optimize() {
         if (this.methods.length === 1) {
             const method = this.methods[0];
@@ -379,14 +379,14 @@ export class CookieMatcher extends Serializable implements RequestMatcher {
     }
 
     async matches(request: OngoingRequest) {
-        if(!request.headers || !request.headers.cookie) {
+        if (!request.headers || !request.headers.cookie) {
             return false;
         }
 
         const cookies = request.headers.cookie.split(';').map(cookie => {
             const [key, value] = cookie.split('=');
 
-            return { [key.trim()]: (value || '').trim()}
+            return { [key.trim()]: (value || '').trim() }
         });
 
         return cookies.some(element => _.isEqual(element, this.cookie));
@@ -402,7 +402,7 @@ export class CallbackMatcher extends Serializable implements RequestMatcher {
 
     constructor(
         public callback: (request: CompletedRequest) => MaybePromise<boolean>
-        ) {
+    ) {
         super();
     }
 
@@ -412,47 +412,45 @@ export class CallbackMatcher extends Serializable implements RequestMatcher {
     }
 
     explain() {
-        return `matches using provided callback${
-            this.callback.name ? ` (${this.callback.name})` : ''
-        }`;
+        return `matches using provided callback${this.callback.name ? ` (${this.callback.name})` : ''}`;
     }
 
     /**
      * @internal
      */
     serialize(channel: ClientServerChannel): SerializedCallbackMatcherData {
-      channel.onRequest<Replace<CompletedRequest, 'body', string>, boolean>(async (streamMsg) => {
-        const request = withDeserializedBodyReader(streamMsg);
+        channel.onRequest<Replace<CompletedRequest, 'body', string>, boolean>(async (streamMsg) => {
+            const request = withDeserializedBodyReader(streamMsg);
 
-        const callbackResult = await this.callback.call(null, request);
+            const callbackResult = await this.callback.call(null, request);
 
-        return callbackResult;
-      });
+            return callbackResult;
+        });
 
-      return { type: this.type, name: this.callback.name, version: 1 };
+        return { type: this.type, name: this.callback.name, version: 1 };
     }
 
     /**
      * @internal
      */
     static deserialize(
-      { name }: SerializedCallbackMatcherData,
-      channel: ClientServerChannel
+        { name }: SerializedCallbackMatcherData,
+        channel: ClientServerChannel
     ): CallbackMatcher {
-      const rpcCallback = async (request: CompletedRequest) => {
-        const callbackResult = channel.request<
-            Replace<CompletedRequest, 'body', string>,
-            boolean
-        >(withSerializedBodyReader(request) as any);
+        const rpcCallback = async (request: CompletedRequest) => {
+            const callbackResult = channel.request<
+                Replace<CompletedRequest, 'body', string>,
+                boolean
+            >(withSerializedBodyReader(request) as any);
 
-        return callbackResult;
-      };
-      // Pass across the name from the real callback, for explain()
-      Object.defineProperty(rpcCallback, 'name', { value: name });
+            return callbackResult;
+        };
+        // Pass across the name from the real callback, for explain()
+        Object.defineProperty(rpcCallback, 'name', { value: name });
 
-      // Call the client's callback (via stream), and save a handler on our end for
-      // the response that comes back.
-      return new CallbackMatcher(rpcCallback);
+        // Call the client's callback (via stream), and save a handler on our end for
+        // the response that comes back.
+        return new CallbackMatcher(rpcCallback);
     }
 }
 
@@ -504,6 +502,6 @@ export function explainMatchers(matchers: RequestMatcher[]) {
 
     // With 3+, we need to oxford comma separate explanations to make them readable
     return matchers.slice(0, -1)
-    .map((m) => m.explain())
-    .join(', ') + ', and ' + matchers.slice(-1)[0].explain();
+        .map((m) => m.explain())
+        .join(', ') + ', and ' + matchers.slice(-1)[0].explain();
 }

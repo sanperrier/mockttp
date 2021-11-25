@@ -497,6 +497,10 @@ export class MockttpClient extends AbstractMockttp implements Mockttp {
         return this._addRequestRules(rules, false);
     }
 
+    public removeRequestRules = async (...rules: Array<{ id: string }>): Promise<void> => {
+        return this._removeRequestRules(rules);
+    }
+
     public setRequestRules = async (...rules: RequestRuleData[]): Promise<MockedEndpoint[]> => {
         return this._addRequestRules(rules, true);
     }
@@ -552,6 +556,27 @@ export class MockttpClient extends AbstractMockttp implements Mockttp {
 
         return endpoints.map(({ id, explanation }) =>
             new MockedEndpointClient(id, explanation, this.getEndpointDataGetter(id))
+        );
+    }
+
+    private _removeRequestRules = async (
+        rules: Array<{ id: string }>
+    ): Promise<void> => {
+        if (!this.running) throw new Error('Cannot add rules before the server is started');
+
+        // Backward compat: make Add/SetRules work with servers that only define reset & addRule (singular).
+        // Adds a small risk of odd behaviour in the gap between reset & all the rules being added, but it
+        // should be extremely brief, and no worse than existing behaviour for those server versions.
+        if (!this.typeHasField('Mutation', 'removeRules')) {
+            throw new Error('not implemented');
+        }
+
+        await this.queryMockServer<{ endpoints: Array<{ id: string, explanation?: string }> }>(
+            `mutation RemoveRules($ids: [String!]!) {
+                removeRules(input: $ids)
+            }`, {
+                ids: rules.map((rule) => rule.id)
+            }
         );
     }
 
