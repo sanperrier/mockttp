@@ -331,14 +331,16 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
 
     private announceResponseAsync(response: OngoingResponse) {
         setImmediate(() => {
-            waitForCompletedResponse(response)
-            .then((res: CompletedResponse) => {
-                this.eventEmitter.emit('response', Object.assign(res, {
-                    timingEvents: _.clone(res.timingEvents),
-                    tags: _.clone(res.tags)
-                }));
-            })
-            .catch(console.error);
+            if (this.eventEmitter.listenerCount('response')) {
+                waitForCompletedResponse(response)
+                    .then((res: CompletedResponse) => {
+                        this.eventEmitter.emit('response', Object.assign(res, {
+                            timingEvents: _.clone(res.timingEvents),
+                            tags: _.clone(res.tags)
+                        }));
+                    })
+                    .catch(console.error);
+            }
         });
     }
 
