@@ -53,37 +53,37 @@ nodeOnly(() => {
             });
 
             it("should mock proxied HTTP with request + process.env", async () => {
-                await server.get("http://example.com/endpoint").thenReply(200, "mocked data");
+                await server.get("http://example.org/endpoint").thenReply(200, "mocked data");
 
-                let response = await request.get("http://example.com/endpoint");
+                let response = await request.get("http://example.org/endpoint");
                 expect(response).to.equal("mocked data");
             });
 
             it("should mock proxied HTTP matching relative URLs", async () => {
                 await server.get("/endpoint").thenReply(200, "mocked data");
-                let response = await request.get("http://example.com/endpoint");
+                let response = await request.get("http://example.org/endpoint");
                 expect(response).to.equal("mocked data");
             });
 
             it("should mock proxied HTTP matching absolute protocol-less URLs", async () => {
-                await server.get("example.com/endpoint").thenReply(200, "mocked data");
-                let response = await request.get("http://example.com/endpoint");
+                await server.get("example.org/endpoint").thenReply(200, "mocked data");
+                let response = await request.get("http://example.org/endpoint");
                 expect(response).to.equal("mocked data");
             });
 
             it("should mock proxied HTTP matching badly formatted URLs with empty paths", async () => {
                 await server.get('/').thenReply(200, 'Mock response');
 
-                const response = await sendRawRequest(server, 'GET http://example.com HTTP/1.1\n\n');
+                const response = await sendRawRequest(server, 'GET http://example.org HTTP/1.1\n\n');
                 expect(response).to.include('HTTP/1.1 200 OK');
                 expect(response).to.include('Mock response');
             });
 
             it("should mock proxied HTTP matching requests by host", async () => {
-                await server.get().forHost('example.com').thenReply(200, "host matched");
+                await server.get().forHost('example.org').thenReply(200, "host matched");
 
                 await expect(
-                    await request.get("http://example.com/")
+                    await request.get("http://example.org/")
                 ).to.equal('host matched');
 
                 await expect(
@@ -92,9 +92,9 @@ nodeOnly(() => {
             });
 
             it("should be able to pass through requests", async () => {
-                await server.get("http://example.com/").thenPassThrough();
+                await server.get("http://example.org/").thenPassThrough();
 
-                let response = await request.get("http://example.com/");
+                let response = await request.get("http://example.org/");
                 expect(response).to.include(
                     "This domain is for use in illustrative examples in documents."
                 );
@@ -261,14 +261,14 @@ nodeOnly(() => {
             it("should be able to rewrite a request's URL to a different host", async () => {
                 const remoteEndpoint = await remoteServer.get('/').thenReply(200, 'my remote');
 
-                await server.get('http://example.com').thenPassThrough({
+                await server.get('http://example.org').thenPassThrough({
                     beforeRequest: (req) => {
-                        expect(req.url).to.equal('http://example.com/');
+                        expect(req.url).to.equal('http://example.org/');
                         return { url: remoteServer.url };
                     }
                 });
 
-                let response = await request.get('http://example.com');
+                let response = await request.get('http://example.org');
                 expect(response).to.equal("my remote");
 
                 // Should automatically update the host header en route:
@@ -702,34 +702,34 @@ nodeOnly(() => {
 
             describe("using request + process.env", () => {
                 it("should mock proxied HTTP", async () => {
-                    await server.get("http://example.com/endpoint").thenReply(200, "mocked data");
+                    await server.get("http://example.org/endpoint").thenReply(200, "mocked data");
 
-                    let response = await request.get("http://example.com/endpoint");
+                    let response = await request.get("http://example.org/endpoint");
                     expect(response).to.equal("mocked data");
                 });
 
                 it("should mock proxied HTTPS", async () => {
-                    await server.get("https://example.com/endpoint").thenReply(200, "mocked data");
+                    await server.get("https://example.org/endpoint").thenReply(200, "mocked data");
 
-                    let response = await request.get("https://example.com/endpoint");
+                    let response = await request.get("https://example.org/endpoint");
                     expect(response).to.equal("mocked data");
                 });
 
                 it("should mock proxied traffic ignoring the protocol", async () => {
-                    await server.get("example.com/endpoint").thenReply(200, "mocked data");
+                    await server.get("example.org/endpoint").thenReply(200, "mocked data");
 
                     expect(
-                        await request.get("https://example.com/endpoint")
+                        await request.get("https://example.org/endpoint")
                     ).to.equal("mocked data");
                     expect(
-                        await request.get("http://example.com/endpoint")
+                        await request.get("http://example.org/endpoint")
                     ).to.equal("mocked data");
                 });
 
                 it("should mock proxied HTTPS with a specific port", async () => {
-                    await server.get("https://example.com:1234/endpoint").thenReply(200, "mocked data");
+                    await server.get("https://example.org:1234/endpoint").thenReply(200, "mocked data");
 
-                    let response = await request.get("https://example.com:1234/endpoint");
+                    let response = await request.get("https://example.org:1234/endpoint");
                     expect(response).to.equal("mocked data");
                 });
 
@@ -1432,7 +1432,7 @@ nodeOnly(() => {
                         ignoreHostCertificateErrors: ['localhost']
                     });
 
-                    const response = await http2ProxyRequest(server, "https://example.com");
+                    const response = await http2ProxyRequest(server, "https://example.org");
 
                     expect(response.headers[':status']).to.equal(200);
                     expect(response.body.toString()).to.equal("Real HTTP/2 response");
@@ -1497,7 +1497,7 @@ nodeOnly(() => {
 
                         await server.anyRequest().thenForwardTo(remoteH1Server.url);
 
-                        const response = await http2ProxyRequest(server, "https://example.com");
+                        const response = await http2ProxyRequest(server, "https://example.org");
 
                         expect(response.headers[':status']).to.equal(200);
                         expect(response.body.toString()).to.equal("HTTP/1 response");
@@ -1554,7 +1554,7 @@ nodeOnly(() => {
 
             it("forwards to the location even if the port & protocol is implicit", async () => {
                 await remoteServer.get('/').thenReply(200, "forwarded response");
-                await server.anyRequest().thenForwardTo('example.com');
+                await server.anyRequest().thenForwardTo('example.org');
 
                 let response = await request.get(server.urlFor("/"));
 
@@ -2319,11 +2319,11 @@ nodeOnly(() => {
                 await server.anyRequest().thenPassThrough({
                     proxyConfig: {
                         proxyUrl: intermediateProxy.url,
-                        noProxy: ['example.com:80']
+                        noProxy: ['example.org:80']
                     }
                 });
 
-                await request.get('http://example.com/').catch(() => {});
+                await request.get('http://example.org/').catch(() => {});
 
                 // And it didn't use the proxy
                 expect((await proxyEndpoint.getSeenRequests()).length).to.equal(0);
@@ -2360,7 +2360,7 @@ nodeOnly(() => {
                 await server.anyRequest().thenPassThrough({
                     proxyConfig: {
                         proxyUrl: intermediateProxy.url,
-                        noProxy: ['example.com']
+                        noProxy: ['example.org']
                     }
                 });
 
@@ -2399,11 +2399,11 @@ nodeOnly(() => {
                 await server.anyRequest().thenPassThrough({
                     proxyConfig: {
                         proxyUrl: intermediateProxy.url,
-                        noProxy: ['example.com:443']
+                        noProxy: ['example.org:443']
                     }
                 });
 
-                await request.get('http://example.com/').catch(() => {});
+                await request.get('http://example.org/').catch(() => {});
 
                 // And it went via the intermediate proxy
                 expect((await proxyEndpoint.getSeenRequests()).length).to.equal(1);

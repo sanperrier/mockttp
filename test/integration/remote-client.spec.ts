@@ -579,7 +579,7 @@ nodeOnly(() => {
         describe("with strict CORS configured", () => {
             let server = getStandalone({
                 corsOptions: {
-                    origin: 'https://example.com',
+                    origin: 'https://example.org',
                     strict: true
                 }
             });
@@ -613,7 +613,7 @@ nodeOnly(() => {
                 client = getRemote({
                     client: {
                         headers: {
-                            origin: 'http://example.com'
+                            origin: 'http://example.org'
                         }
                     }
                 });
@@ -625,7 +625,7 @@ nodeOnly(() => {
                 client = getRemote({
                     client: {
                         headers: {
-                            origin: 'https://example.com'
+                            origin: 'https://example.org'
                         }
                     }
                 });
@@ -637,7 +637,7 @@ nodeOnly(() => {
                 client = getRemote({
                     client: {
                         headers: {
-                            origin: 'https://example.com'
+                            origin: 'https://example.org'
                         }
                     }
                 });
@@ -658,7 +658,7 @@ nodeOnly(() => {
                 client = getRemote({
                     client: {
                         headers: {
-                            origin: 'https://example.com'
+                            origin: 'https://example.org'
                         }
                     }
                 });
@@ -683,7 +683,7 @@ nodeOnly(() => {
                 client = getRemote({
                     client: {
                         headers: {
-                            origin: 'https://example.com'
+                            origin: 'https://example.org'
                         }
                     }
                 });
@@ -693,7 +693,7 @@ nodeOnly(() => {
                 // Manually send a subscription socket with the right Origin for consistency with above
                 const ws = new WebSocket(`http://localhost:45454/server/${client.port}/subscription`, {
                     headers: {
-                        origin: 'https://example.com'
+                        origin: 'https://example.org'
                     }
                 } as any);
 

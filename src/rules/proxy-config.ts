@@ -25,8 +25,8 @@ export interface ProxySetting {
      * any differences are a bug.
      *
      * The currently supported formats are:
-     * - example.com (matches domain and all subdomains)
-     * - example.com:443 (matches domain and all subdomains, but only on that port)
+     * - example.org (matches domain and all subdomains)
+     * - example.org:443 (matches domain and all subdomains, but only on that port)
      * - 10.0.0.1 (matches IP, but only when used directly - does not resolve domains)
      *
      * Some other formats (e.g. leading dots or *.) will work, but the leading

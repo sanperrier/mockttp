@@ -66,14 +66,14 @@ describe("Client error subscription", () => {
                 let errorPromise = getDeferred<ClientError>();
                 await server.on('client-error', (e) => errorPromise.resolve(e));
 
-                sendRawRequest(server, 'POST https://example.com HTTP/0\r\n\r\n');
+                sendRawRequest(server, 'POST https://example.org HTTP/0\r\n\r\n');
 
                 let clientError = await errorPromise;
 
                 expect(clientError.errorCode).to.equal("HPE_INVALID_VERSION");
                 expect(clientError.request.method).to.equal("POST");
                 expect(clientError.request.httpVersion).to.equal("0");
-                expect(clientError.request.url).to.equal("https://example.com");
+                expect(clientError.request.url).to.equal("https://example.org");
 
                 const response = clientError.response as CompletedResponse;
                 expect(response.statusCode).to.equal(400);
@@ -229,14 +229,14 @@ describe("Client error subscription", () => {
                 let errorPromise = getDeferred<ClientError>();
                 await server.on('client-error', (e) => errorPromise.resolve(e));
 
-                sendRawRequest(server, 'QWE https://example.com HTTP/1.1\r\n\r\n');
+                sendRawRequest(server, 'QWE https://example.org HTTP/1.1\r\n\r\n');
 
                 let clientError = await errorPromise;
 
                 expect(clientError.errorCode).to.equal("HPE_INVALID_METHOD");
                 expect(clientError.request.method).to.equal("QWE");
                 expect(clientError.request.httpVersion).to.equal("1.1");
-                expect(clientError.request.url).to.equal("https://example.com");
+                expect(clientError.request.url).to.equal("https://example.org");
 
                 const response = clientError.response as CompletedResponse;
                 expect(response.statusCode).to.equal(400);
@@ -308,9 +308,9 @@ describe("Client error subscription", () => {
                 it("should report error responses from HTTP-proxied header overflows", async () => {
                     let errorPromise = getDeferred<ClientError>();
                     await server.on('client-error', (e) => errorPromise.resolve(e));
-                    await server.get("http://example.com/endpoint").thenReply(200, "Mock data");
+                    await server.get("http://example.org/endpoint").thenReply(200, "Mock data");
 
-                    const response = await fetch("http://example.com/endpoint", <any> {
+                    const response = await fetch("http://example.org/endpoint", <any> {
                         agent: new HttpsProxyAgent({
                             protocol: 'http',
                             host: 'localhost',
@@ -327,8 +327,8 @@ describe("Client error subscription", () => {
 
                     expect(clientError.errorCode).to.equal("HPE_HEADER_OVERFLOW");
                     expect(clientError.request.method).to.equal("GET");
-                    expect(clientError.request.url).to.equal("http://example.com/endpoint");
-                    expect(clientError.request.headers['Host']).to.equal('example.com');
+                    expect(clientError.request.url).to.equal("http://example.org/endpoint");
+                    expect(clientError.request.headers['Host']).to.equal('example.org');
 
                     const reportedResponse = clientError.response as CompletedResponse;
                     expect(reportedResponse.statusCode).to.equal(431);
@@ -342,9 +342,9 @@ describe("Client error subscription", () => {
                 it("should report error responses from HTTPS-proxied header overflows", async () => {
                     let errorPromise = getDeferred<ClientError>();
                     await server.on('client-error', (e) => errorPromise.resolve(e));
-                    await server.get("https://example.com/endpoint").thenReply(200, "Mock data");
+                    await server.get("https://example.org/endpoint").thenReply(200, "Mock data");
 
-                    const response = await fetch("https://example.com/endpoint", <any> {
+                    const response = await fetch("https://example.org/endpoint", <any> {
                         agent: new HttpsProxyAgent({
                             protocol: 'https',
                             host: 'localhost',
@@ -353,7 +353,7 @@ describe("Client error subscription", () => {
                         headers: {
                             // Order here matters - if the host header appears after long-value, then we miss it
                             // in the packet buffer, and request.url is relative, not absolute
-                            'host': 'example.com',
+                            'host': 'example.org',
                             "long-value": TOO_LONG_HEADER_VALUE
                         }
                     });
@@ -370,10 +370,10 @@ describe("Client error subscription", () => {
                         expect(clientError.request.url).to.equal(undefined);
                     } else {
                         expect(clientError.request.method).to.equal("GET");
-                        expect(clientError.request.url).to.equal("https://example.com/endpoint");
+                        expect(clientError.request.url).to.equal("https://example.org/endpoint");
                         expect(_.find(clientError.request.headers,
                             (_v, key) => key.toLowerCase() === 'host')
-                        ).to.equal('example.com');
+                        ).to.equal('example.org');
                         expect(clientError.request.headers['long-value']?.slice(0, 10)).to.equal('XXXXXXXXXX');
                     }
 

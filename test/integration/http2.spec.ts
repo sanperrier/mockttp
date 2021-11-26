@@ -103,22 +103,22 @@ nodeOnly(() => {
             });
 
             it("can respond to proxied HTTP/2 requests", async () => {
-                await server.get('http://example.com/mocked-endpoint')
+                await server.get('http://example.org/mocked-endpoint')
                     .thenReply(200, "Proxied HTTP2 response!");
 
                 const client = http2.connect(server.url);
 
                 const req = client.request({
                     ':method': 'CONNECT',
-                    ':authority': 'example.com:80'
+                    ':authority': 'example.org:80'
                 });
 
                 // Initial response, the proxy has set up our tunnel:
                 const responseHeaders = await getHttp2Response(req);
                 expect(responseHeaders[':status']).to.equal(200);
 
-                // We can now read/write to req as a raw TCP socket to example.com:
-                const proxiedClient = http2.connect('http://example.com', {
+                // We can now read/write to req as a raw TCP socket to example.org:
+                const proxiedClient = http2.connect('http://example.org', {
                      // Tunnel this request through the proxy stream
                     createConnection: () => req
                 });
@@ -136,7 +136,7 @@ nodeOnly(() => {
             });
 
             it("can respond to HTTP1-proxied HTTP/2 requests", async () => {
-                await server.get('http://example.com/mocked-endpoint')
+                await server.get('http://example.org/mocked-endpoint')
                     .thenReply(200, "Proxied HTTP2 response!");
 
                 // Get an HTTP/1.1 tunnel:
@@ -144,7 +144,7 @@ nodeOnly(() => {
                     method: 'CONNECT',
                     host: 'localhost',
                     port: server.port,
-                    path: 'example.com'
+                    path: 'example.org'
                 });
                 req.end();
 
@@ -152,8 +152,8 @@ nodeOnly(() => {
                     req.on('connect', (_res, socket) => resolve(socket));
                 });
 
-                // We can now read/write to our raw TCP socket to example.com:
-                const client = http2.connect('http://example.com', {
+                // We can now read/write to our raw TCP socket to example.org:
+                const client = http2.connect('http://example.org', {
                     // Tunnel this request through the HTTP/1.1 tunnel:
                     createConnection: () => tunnelledSocket
                 });
@@ -335,22 +335,22 @@ nodeOnly(() => {
             it("can respond to proxied HTTP/2 requests", async function() {
                 if (!semver.satisfies(process.version, H2_TLS_ON_TLS_SUPPORTED)) this.skip();
 
-                await server.get('https://example.com/mocked-endpoint')
+                await server.get('https://example.org/mocked-endpoint')
                     .thenReply(200, "Proxied HTTP2 response!");
 
                 const client = http2.connect(server.url);
 
                 const req = client.request({
                     ':method': 'CONNECT',
-                    ':authority': 'example.com:443'
+                    ':authority': 'example.org:443'
                 });
 
                 // Initial response, the proxy has set up our tunnel:
                 const responseHeaders = await getHttp2Response(req);
                 expect(responseHeaders[':status']).to.equal(200);
 
-                // We can now read/write to req as a raw TCP socket to example.com:
-                const proxiedClient = http2.connect('https://example.com', {
+                // We can now read/write to req as a raw TCP socket to example.org:
+                const proxiedClient = http2.connect('https://example.org', {
                      // Tunnel this request through the proxy stream
                     createConnection: () => tls.connect({
                         socket: req as any,
@@ -376,22 +376,22 @@ nodeOnly(() => {
                 let seenRequestPromise = getDeferred<CompletedRequest>();
                 await server.on('request', (r) => seenRequestPromise.resolve(r));
 
-                await server.get('https://example.com/mocked-endpoint')
+                await server.get('https://example.org/mocked-endpoint')
                     .thenReply(200, "Proxied HTTP2 response!");
 
                 const client = http2.connect(server.url);
 
                 const req = client.request({
                     ':method': 'CONNECT',
-                    ':authority': 'example.com:443'
+                    ':authority': 'example.org:443'
                 });
 
                 // Initial response, the proxy has set up our tunnel:
                 const responseHeaders = await getHttp2Response(req);
                 expect(responseHeaders[':status']).to.equal(200);
 
-                // We can now read/write to req as a raw TCP socket to example.com:
-                const proxiedClient = http2.connect('https://example.com', {
+                // We can now read/write to req as a raw TCP socket to example.org:
+                const proxiedClient = http2.connect('https://example.org', {
                      // Tunnel this request through the proxy stream
                     createConnection: () => tls.connect({
                         socket: req as any,
@@ -409,7 +409,7 @@ nodeOnly(() => {
                 expect(seenRequest.method).to.equal('GET');
                 expect(seenRequest.protocol).to.equal('https');
                 expect(seenRequest.httpVersion).to.equal('2.0');
-                expect(seenRequest.url).to.equal("https://example.com/mocked-endpoint");
+                expect(seenRequest.url).to.equal("https://example.org/mocked-endpoint");
                 expect(seenRequest.remoteIpAddress).to.be.oneOf([
                     '::ffff:127.0.0.1', // IPv4 localhost
                     '::1' // IPv6 localhost
@@ -421,7 +421,7 @@ nodeOnly(() => {
             it("can respond to HTTP1-proxied HTTP/2 requests", async function() {
                 if (!semver.satisfies(process.version, H2_TLS_ON_TLS_SUPPORTED)) this.skip();
 
-                await server.get('https://example.com/mocked-endpoint')
+                await server.get('https://example.org/mocked-endpoint')
                     .thenReply(200, "Proxied HTTP2 response!");
 
                 // Get an HTTP/1.1 tunnel:
@@ -429,7 +429,7 @@ nodeOnly(() => {
                     method: 'CONNECT',
                     host: 'localhost',
                     port: server.port,
-                    path: 'example.com'
+                    path: 'example.org'
                 });
                 req.end();
 
@@ -437,8 +437,8 @@ nodeOnly(() => {
                     req.on('connect', (_res, socket) => resolve(socket));
                 });
 
-                // We can now read/write to our raw TCP socket to example.com:
-                const client = http2.connect('https://example.com', {
+                // We can now read/write to our raw TCP socket to example.org:
+                const client = http2.connect('https://example.org', {
                     // Tunnel this request through the HTTP/1.1 tunnel, via TLS:
                     createConnection: () => tls.connect({
                         socket: tunnelledSocket,
