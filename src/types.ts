@@ -177,6 +177,14 @@ export interface OngoingResponse extends http.ServerResponse {
     tags: string[];
 }
 
+export interface InitiatedResponse {
+    id: string;
+    statusCode: number;
+    statusMessage: string;
+    headers: Headers;
+    timingEvents: TimingEvents | {};
+    tags: string[];
+}
 export interface CompletedResponse {
     id: string;
     statusCode: number;

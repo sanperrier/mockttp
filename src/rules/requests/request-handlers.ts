@@ -20,7 +20,10 @@ import {
     CompletedRequest,
     OngoingResponse,
     CompletedBody,
-    Explainable
+    Explainable,
+    InitiatedRequest,
+    OngoingBody,
+    InitiatedResponse
 } from "../../types";
 
 import { byteLength } from '../../util/util';
@@ -37,7 +40,9 @@ import {
     h2HeadersToH1,
     isAbsoluteUrl,
     cleanUpHeaders,
-    isMockttpBody
+    isMockttpBody,
+    buildInitiatedRequest,
+    buildInitiatedResponse
 } from '../../util/request-utils';
 import { streamToBuffer, asBuffer } from '../../util/buffer-utils';
 import { isLocalhostAddress, isLocalPortActive, isSocketLoop } from '../../util/socket-util';
@@ -533,6 +538,20 @@ export interface PassThroughHandlerOptions {
     lookupOptions?: PassThroughLookupOptions;
 
     /**
+     * A callback that will be passed the ongoing client request (any transformations ignored).
+     * Called only if real request was sent to server.
+     * @note is not implemented for remote client
+     */
+    tapRequest?: (req: InitiatedRequest & { body: OngoingBody }) => MaybePromise<void>;
+
+    /**
+     * A callback that will be passed the ongoing client response.
+     * `null` indicates that response was not delivered (eg. socket error)
+     * @note is not implemented for remote client
+     */
+    tapResponse?: (req: InitiatedRequest & { body: OngoingBody }, res: (InitiatedResponse & { body: OngoingBody }) | null) => MaybePromise<void>;
+
+    /**
      * A set of data to automatically transform a request. This includes properties
      * to support many transformation common use cases.
      *
@@ -934,6 +953,9 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
         [host: string]: { pfx: Buffer, passphrase?: string }
     };
 
+    public readonly tapRequest?: (req: InitiatedRequest & { body: OngoingBody }) => MaybePromise<void>;
+    public readonly tapResponse?: (req: InitiatedRequest & { body: OngoingBody }, res: InitiatedResponse & { body: OngoingBody } | null) => MaybePromise<void>;
+
     public readonly transformRequest?: RequestTransform;
     public readonly transformResponse?: ResponseTransform;
 
@@ -1004,6 +1026,9 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
         this.lookupOptions = options.lookupOptions;
         this.clientCertificateHostMap = options.clientCertificateHostMap || {};
         this.proxyConfig = options.proxyConfig;
+
+        this.tapRequest = options.tapRequest;
+        this.tapResponse = options.tapResponse;
 
         if (options.beforeRequest && options.transformRequest && !_.isEmpty(options.transformRequest)) {
             throw new Error("BeforeRequest and transformRequest options are mutually exclusive");
@@ -1312,271 +1337,299 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
             headers = h2HeadersToH1(headers);
         }
 
+        let tappedRequest: InitiatedRequest & { body: OngoingBody } | undefined;
+        let tappedResponse: InitiatedResponse & { body: OngoingBody } | null | undefined;
+        if (this.tapRequest) {
+            tappedRequest = {
+                ...buildInitiatedRequest(clientReq),
+                body: clientReq.body
+            };
+            this.tapRequest(tappedRequest);
+        }
+
         let serverReq: http.ClientRequest;
-        return new Promise<void>((resolve, reject) => (async () => { // Wrapped to easily catch (a)sync errors
-            serverReq = await makeRequest({
-                protocol,
-                method,
-                hostname,
-                port,
-                family,
-                path,
-                headers,
-                lookup: this.lookup() as typeof dns.lookup,
-                // ^ Cast required to handle __promisify__ type hack in the official Node types
-                agent,
-                minVersion: strictHttpsChecks ? tls.DEFAULT_MIN_VERSION : 'TLSv1', // Allow TLSv1, if !strict
-                rejectUnauthorized: strictHttpsChecks,
-                ...clientCert
-            }, (serverRes) => (async () => {
-                serverRes.on('error', reject);
+        try {
+            await new Promise<void>((resolve, reject) => (async () => { // Wrapped to easily catch (a)sync errors
+                serverReq = await makeRequest({
+                    protocol,
+                    method,
+                    hostname,
+                    port,
+                    family,
+                    path,
+                    headers,
+                    lookup: this.lookup() as typeof dns.lookup,
+                    // ^ Cast required to handle __promisify__ type hack in the official Node types
+                    agent,
+                    minVersion: strictHttpsChecks ? tls.DEFAULT_MIN_VERSION : 'TLSv1', // Allow TLSv1, if !strict
+                    rejectUnauthorized: strictHttpsChecks,
+                    ...clientCert
+                }, (serverRes) => (async () => {
+                    serverRes.on('error', reject);
 
-                let serverStatusCode = serverRes.statusCode!;
-                let serverStatusMessage = serverRes.statusMessage
-                let serverHeaders = serverRes.headers;
-                let resBodyOverride: Buffer | undefined;
+                    let serverStatusCode = serverRes.statusCode!;
+                    let serverStatusMessage = serverRes.statusMessage
+                    let serverHeaders = serverRes.headers;
+                    let resBodyOverride: Buffer | undefined;
 
-                if (isH2Downstream) {
-                    serverHeaders = h1HeadersToH2(serverHeaders);
-                }
-
-                if (this.transformResponse) {
-                    const {
-                        replaceStatus,
-                        updateHeaders,
-                        replaceHeaders,
-                        replaceBody,
-                        replaceBodyFromFile,
-                        updateJsonBody
-                    } = this.transformResponse;
-
-                    if (replaceStatus) {
-                        serverStatusCode = replaceStatus;
-                        serverStatusMessage = undefined; // Reset to default
+                    if (isH2Downstream) {
+                        serverHeaders = h1HeadersToH2(serverHeaders);
                     }
 
-                    if (updateHeaders) {
-                        serverHeaders = {
-                            ...serverHeaders,
-                            ...updateHeaders
-                        };
-                    } else if (replaceHeaders) {
-                        serverHeaders = { ...replaceHeaders };
-                    }
+                    if (this.transformResponse) {
+                        const {
+                            replaceStatus,
+                            updateHeaders,
+                            replaceHeaders,
+                            replaceBody,
+                            replaceBodyFromFile,
+                            updateJsonBody
+                        } = this.transformResponse;
 
-                    if (replaceBody) {
-                        // Note that we're replacing the body without actually waiting for the real one, so
-                        // this can result in sending a request much more quickly!
-                        resBodyOverride = asBuffer(replaceBody);
-                    } else if (replaceBodyFromFile) {
-                        resBodyOverride = await readFile(replaceBodyFromFile, null);
-                    } else if (updateJsonBody) {
-                        const rawBody = await streamToBuffer(serverRes);
-                        const realBody = buildBodyReader(rawBody, serverRes.headers);
-
-                        if (await realBody.getJson() === undefined) {
-                            throw new Error("Can't transform non-JSON response body");
+                        if (replaceStatus) {
+                            serverStatusCode = replaceStatus;
+                            serverStatusMessage = undefined; // Reset to default
                         }
 
-                        const updatedBody = _.mergeWith(
-                            await realBody.getJson(),
-                            updateJsonBody,
-                            (_oldValue, newValue) => {
-                                // We want to remove values with undefines, but Lodash ignores
-                                // undefined return values here. Fortunately, JSON.stringify
-                                // ignores Symbols, omitting them from the result.
-                                if (newValue === undefined) return OMIT_SYMBOL;
-                            }
-                        );
+                        if (updateHeaders) {
+                            serverHeaders = {
+                                ...serverHeaders,
+                                ...updateHeaders
+                            };
+                        } else if (replaceHeaders) {
+                            serverHeaders = { ...replaceHeaders };
+                        }
 
-                        resBodyOverride = asBuffer(JSON.stringify(updatedBody));
+                        if (replaceBody) {
+                            // Note that we're replacing the body without actually waiting for the real one, so
+                            // this can result in sending a request much more quickly!
+                            resBodyOverride = asBuffer(replaceBody);
+                        } else if (replaceBodyFromFile) {
+                            resBodyOverride = await readFile(replaceBodyFromFile, null);
+                        } else if (updateJsonBody) {
+                            const rawBody = await streamToBuffer(serverRes);
+                            const realBody = buildBodyReader(rawBody, serverRes.headers);
+
+                            if (await realBody.getJson() === undefined) {
+                                throw new Error("Can't transform non-JSON response body");
+                            }
+
+                            const updatedBody = _.mergeWith(
+                                await realBody.getJson(),
+                                updateJsonBody,
+                                (_oldValue, newValue) => {
+                                    // We want to remove values with undefines, but Lodash ignores
+                                    // undefined return values here. Fortunately, JSON.stringify
+                                    // ignores Symbols, omitting them from the result.
+                                    if (newValue === undefined) return OMIT_SYMBOL;
+                                }
+                            );
+
+                            resBodyOverride = asBuffer(JSON.stringify(updatedBody));
+                        }
+
+                        if (resBodyOverride) {
+                            // We always re-encode the body to match the resulting content-encoding header:
+                            resBodyOverride = await encodeBuffer(
+                                resBodyOverride,
+                                (serverHeaders['content-encoding'] || '') as SUPPORTED_ENCODING
+                            );
+
+                            serverHeaders['content-length'] = getCorrectContentLength(
+                                resBodyOverride,
+                                serverRes.headers,
+                                (updateHeaders && updateHeaders['content-length'] !== undefined)
+                                    ? serverHeaders // Iff you replaced the content length
+                                    : replaceHeaders,
+                                method === 'HEAD' // HEAD responses are allowed mismatched content-length
+                            );
+                        }
+
+                        serverHeaders = dropUndefinedValues(serverHeaders);
+                    } else if (this.beforeResponse) {
+                        let modifiedRes: CallbackResponseResult | void;
+                        let body: Buffer;
+
+                        body = await streamToBuffer(serverRes);
+                        const cleanHeaders = cleanUpHeaders(serverHeaders);
+
+                        modifiedRes = await this.beforeResponse({
+                            id: clientReq.id,
+                            statusCode: serverStatusCode,
+                            statusMessage: serverRes.statusMessage,
+                            headers: _.clone(cleanHeaders),
+                            body: buildBodyReader(body, serverHeaders)
+                        });
+
+                        if (modifiedRes === 'close') {
+                            // Dump the real response data and kill the client socket:
+                            serverRes.resume();
+                            (clientRes as any).socket.end();
+                            throw new AbortError('Connection closed (intentionally)');
+                        }
+
+                        validateCustomHeaders(cleanHeaders, modifiedRes?.headers);
+
+                        serverStatusCode = modifiedRes?.statusCode ||
+                            modifiedRes?.status ||
+                            serverStatusCode;
+                        serverStatusMessage = modifiedRes?.statusMessage ||
+                            serverStatusMessage;
+
+                        serverHeaders = modifiedRes?.headers || serverHeaders;
+
+                        if (modifiedRes?.json) {
+                            serverHeaders['content-type'] = 'application/json';
+                            resBodyOverride = asBuffer(JSON.stringify(modifiedRes?.json));
+                        } else {
+                            resBodyOverride = getCallbackResultBody(modifiedRes?.body);
+                        }
+
+                        if (resBodyOverride !== undefined) {
+                            serverHeaders['content-length'] = getCorrectContentLength(
+                                resBodyOverride,
+                                serverRes.headers,
+                                modifiedRes?.headers,
+                                method === 'HEAD' // HEAD responses are allowed mismatched content-length
+                            );
+                        } else {
+                            // If you don't specify a body override, we need to use the real
+                            // body anyway, because as we've read it already streaming it to
+                            // the response won't work
+                            resBodyOverride = body;
+                        }
+
+                        serverHeaders = dropUndefinedValues(serverHeaders);
+                    }
+
+                    Object.keys(serverHeaders).forEach((header) => {
+                        const headerValue = serverHeaders[header];
+                        if (
+                            headerValue === undefined ||
+                            (header as unknown) === http2.sensitiveHeaders ||
+                            header === ':status' // H2 status gets set by writeHead below
+                        ) return;
+
+                        try {
+                            clientRes.setHeader(header, headerValue);
+                        } catch (e) {
+                            // A surprising number of real sites have slightly invalid headers
+                            // (e.g. extra spaces). If we hit any, we just drop that header
+                            // and print a warning.
+                            console.log(`Error setting header on passthrough response: ${e.message}`);
+                        }
+                    });
+
+                    clientRes.writeHead(
+                        serverStatusCode,
+                        serverStatusMessage || clientRes.statusMessage
+                    );
+
+                    if (this.tapResponse) {
+                        tappedResponse = { ...buildInitiatedResponse(clientRes), body: clientRes.body };
                     }
 
                     if (resBodyOverride) {
-                        // We always re-encode the body to match the resulting content-encoding header:
-                        resBodyOverride = await encodeBuffer(
-                            resBodyOverride,
-                            (serverHeaders['content-encoding'] || '') as SUPPORTED_ENCODING
-                        );
-
-                        serverHeaders['content-length'] = getCorrectContentLength(
-                            resBodyOverride,
-                            serverRes.headers,
-                            (updateHeaders && updateHeaders['content-length'] !== undefined)
-                                ? serverHeaders // Iff you replaced the content length
-                                : replaceHeaders,
-                            method === 'HEAD' // HEAD responses are allowed mismatched content-length
-                        );
-                    }
-
-                    serverHeaders = dropUndefinedValues(serverHeaders);
-                } else if (this.beforeResponse) {
-                    let modifiedRes: CallbackResponseResult | void;
-                    let body: Buffer;
-
-                    body = await streamToBuffer(serverRes);
-                    const cleanHeaders = cleanUpHeaders(serverHeaders);
-
-                    modifiedRes = await this.beforeResponse({
-                        id: clientReq.id,
-                        statusCode: serverStatusCode,
-                        statusMessage: serverRes.statusMessage,
-                        headers: _.clone(cleanHeaders),
-                        body: buildBodyReader(body, serverHeaders)
-                    });
-
-                    if (modifiedRes === 'close') {
-                        // Dump the real response data and kill the client socket:
+                        // Return the override data to the client:
+                        clientRes.end(resBodyOverride);
+                        // Dump the real response data:
                         serverRes.resume();
-                        (clientRes as any).socket.end();
-                        throw new AbortError('Connection closed (intentionally)');
-                    }
 
-                    validateCustomHeaders(cleanHeaders, modifiedRes?.headers);
-
-                    serverStatusCode = modifiedRes?.statusCode ||
-                        modifiedRes?.status ||
-                        serverStatusCode;
-                    serverStatusMessage = modifiedRes?.statusMessage ||
-                        serverStatusMessage;
-
-                    serverHeaders = modifiedRes?.headers || serverHeaders;
-
-                    if (modifiedRes?.json) {
-                        serverHeaders['content-type'] = 'application/json';
-                        resBodyOverride = asBuffer(JSON.stringify(modifiedRes?.json));
+                        resolve();
                     } else {
-                        resBodyOverride = getCallbackResultBody(modifiedRes?.body);
+                        serverRes.pipe(clientRes);
+                        serverRes.once('end', resolve);
+                    }
+                })().catch(reject));
+
+                serverReq.once('socket', (socket: net.Socket) => {
+                    // This event can fire multiple times for keep-alive sockets, which are used to
+                    // make multiple requests. If/when that happens, we don't need more event listeners.
+                    if (this.outgoingSockets.has(socket)) return;
+
+                    // Add this port to our list of active ports, once it's connected (before then it has no port)
+                    if (socket.connecting) {
+                        socket.once('connect', () => {
+                            this.outgoingSockets.add(socket)
+                        });
+                    } else if (socket.localPort !== undefined) {
+                        this.outgoingSockets.add(socket);
                     }
 
-                    if (resBodyOverride !== undefined) {
-                        serverHeaders['content-length'] = getCorrectContentLength(
-                            resBodyOverride,
-                            serverRes.headers,
-                            modifiedRes?.headers,
-                            method === 'HEAD' // HEAD responses are allowed mismatched content-length
-                        );
-                    } else {
-                        // If you don't specify a body override, we need to use the real
-                        // body anyway, because as we've read it already streaming it to
-                        // the response won't work
-                        resBodyOverride = body;
-                    }
+                    // Remove this port from our list of active ports when it's closed
+                    // This is called for both clean closes & errors.
+                    socket.once('close', () => this.outgoingSockets.delete(socket));
+                });
 
-                    serverHeaders = dropUndefinedValues(serverHeaders);
+                if (reqBodyOverride) {
+                    clientReq.body.asStream().resume(); // Dump any remaining real request body
+
+                    if (reqBodyOverride.length > 0) serverReq.end(reqBodyOverride);
+                    else serverReq.end(); // http2-wrapper fails given an empty buffer for methods that aren't allowed a body
+                } else {
+                    // asStream includes all content, including the body before this call
+                    const reqBodyStream = clientReq.body.asStream();
+                    reqBodyStream.pipe(serverReq);
+                    reqBodyStream.on('error', () => serverReq.abort());
                 }
 
-                Object.keys(serverHeaders).forEach((header) => {
-                    const headerValue = serverHeaders[header];
-                    if (
-                        headerValue === undefined ||
-                        (header as unknown) === http2.sensitiveHeaders ||
-                        header === ':status' // H2 status gets set by writeHead below
-                    ) return;
+                // If the downstream connection aborts, before the response has been completed,
+                // we also abort the upstream connection. Important to avoid unnecessary connections,
+                // and to correctly proxy client connection behaviour to the upstream server.
+                function abortUpstream() {
+                    serverReq.abort();
+                }
+                clientReq.on('aborted', abortUpstream);
+                clientRes.once('finish', () => clientReq.removeListener('aborted', abortUpstream));
 
-                    try {
-                        clientRes.setHeader(header, headerValue);
-                    } catch (e) {
-                        // A surprising number of real sites have slightly invalid headers
-                        // (e.g. extra spaces). If we hit any, we just drop that header
-                        // and print a warning.
-                        console.log(`Error setting header on passthrough response: ${e.message}`);
+                serverReq.on('error', (e: any) => {
+                    if ((<any>serverReq).aborted) return;
+
+                    // Tag responses, so programmatic examination can react to this
+                    // event, without having to parse response data or similar.
+                    const tlsAlertMatch = /SSL alert number (\d+)/.exec(e.message);
+                    if (tlsAlertMatch) {
+                        clientRes.tags.push('passthrough-tls-error:ssl-alert-' + tlsAlertMatch[1]);
+                    }
+                    clientRes.tags.push('passthrough-error:' + e.code);
+
+                    if (e.code === 'ECONNRESET') {
+                        // The upstream socket closed: forcibly close the downstream stream to match
+                        const socket: net.Socket = (clientReq as any).socket;
+                        socket.destroy();
+                        reject(new AbortError('Upstream connection was reset'));
+                    } else {
+                        e.statusCode = 502;
+                        e.statusMessage = 'Error communicating with upstream server';
+                        reject(e);
                     }
                 });
 
-                clientRes.writeHead(
-                    serverStatusCode,
-                    serverStatusMessage || clientRes.statusMessage
-                );
+                // We always start upstream connections *immediately*. This might be less efficient, but it
+                // ensures that we're accurately mirroring downstream, which has indeed already connected.
+                serverReq.flushHeaders();
 
-                if (resBodyOverride) {
-                    // Return the override data to the client:
-                    clientRes.end(resBodyOverride);
-                    // Dump the real response data:
-                    serverRes.resume();
-
-                    resolve();
-                } else {
-                    serverRes.pipe(clientRes);
-                    serverRes.once('end', resolve);
-                }
-            })().catch(reject));
-
-            serverReq.once('socket', (socket: net.Socket) => {
-                // This event can fire multiple times for keep-alive sockets, which are used to
-                // make multiple requests. If/when that happens, we don't need more event listeners.
-                if (this.outgoingSockets.has(socket)) return;
-
-                // Add this port to our list of active ports, once it's connected (before then it has no port)
-                if (socket.connecting) {
-                    socket.once('connect', () => {
-                        this.outgoingSockets.add(socket)
-                    });
-                } else if (socket.localPort !== undefined) {
-                    this.outgoingSockets.add(socket);
-                }
-
-                // Remove this port from our list of active ports when it's closed
-                // This is called for both clean closes & errors.
-                socket.once('close', () => this.outgoingSockets.delete(socket));
-            });
-
-            if (reqBodyOverride) {
-                clientReq.body.asStream().resume(); // Dump any remaining real request body
-
-                if (reqBodyOverride.length > 0) serverReq.end(reqBodyOverride);
-                else serverReq.end(); // http2-wrapper fails given an empty buffer for methods that aren't allowed a body
-            } else {
-                // asStream includes all content, including the body before this call
-                const reqBodyStream = clientReq.body.asStream();
-                reqBodyStream.pipe(serverReq);
-                reqBodyStream.on('error', () => serverReq.abort());
-            }
-
-            // If the downstream connection aborts, before the response has been completed,
-            // we also abort the upstream connection. Important to avoid unnecessary connections,
-            // and to correctly proxy client connection behaviour to the upstream server.
-            function abortUpstream() {
-                serverReq.abort();
-            }
-            clientReq.on('aborted', abortUpstream);
-            clientRes.once('finish', () => clientReq.removeListener('aborted', abortUpstream));
-
-            serverReq.on('error', (e: any) => {
-                if ((<any>serverReq).aborted) return;
-
-                // Tag responses, so programmatic examination can react to this
-                // event, without having to parse response data or similar.
-                const tlsAlertMatch = /SSL alert number (\d+)/.exec(e.message);
-                if (tlsAlertMatch) {
-                    clientRes.tags.push('passthrough-tls-error:ssl-alert-' + tlsAlertMatch[1]);
-                }
+                // For similar reasons, we don't want any buffering on outgoing data at all if possible:
+                serverReq.setNoDelay(true);
+            })().catch((e) => {
+                // Catch otherwise-unhandled sync or async errors in the above promise:
+                if (serverReq) serverReq.destroy();
                 clientRes.tags.push('passthrough-error:' + e.code);
-
-                if (e.code === 'ECONNRESET') {
-                    // The upstream socket closed: forcibly close the downstream stream to match
-                    const socket: net.Socket = (clientReq as any).socket;
-                    socket.destroy();
-                    reject(new AbortError('Upstream connection was reset'));
-                } else {
-                    e.statusCode = 502;
-                    e.statusMessage = 'Error communicating with upstream server';
-                    reject(e);
+                reject(e);
+            }));
+        } catch (e) {
+            tappedResponse = null;
+            throw e;
+        } finally {
+            if (this.tapResponse) {
+                if (tappedRequest && tappedResponse !== undefined) {
+                    this.tapResponse(tappedRequest, tappedResponse);
+                    tappedRequest = undefined;
+                    tappedResponse = undefined;
                 }
-            });
+            }
+        }
 
-            // We always start upstream connections *immediately*. This might be less efficient, but it
-            // ensures that we're accurately mirroring downstream, which has indeed already connected.
-            serverReq.flushHeaders();
-
-            // For similar reasons, we don't want any buffering on outgoing data at all if possible:
-            serverReq.setNoDelay(true);
-        })().catch((e) => {
-            // Catch otherwise-unhandled sync or async errors in the above promise:
-            if (serverReq) serverReq.destroy();
-            clientRes.tags.push('passthrough-error:' + e.code);
-            reject(e);
-        }));
     }
 
     /**

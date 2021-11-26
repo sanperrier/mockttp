@@ -9,7 +9,7 @@ import portfinder = require('portfinder');
 import request = require("request-promise-native");
 import * as zlib from 'zlib';
 
-import { getLocal, Mockttp, CompletedResponse, MockedEndpoint } from "../..";
+import { getLocal, Mockttp, CompletedResponse, MockedEndpoint, InitiatedRequest, OngoingBody, InitiatedResponse } from "../..";
 import {
     expect,
     nodeOnly,
@@ -100,6 +100,42 @@ nodeOnly(() => {
                 );
             });
 
+            it("should be able to pass through requests tapping into request and response", async () => {
+                let tappedRequest: InitiatedRequest & { body: OngoingBody } | undefined;
+                let tappedRequestAndResponse: [InitiatedRequest & { body: OngoingBody }, InitiatedResponse & { body: OngoingBody } | null] | undefined;
+                await server.get("http://example.org/").thenPassThrough({
+                    tapRequest: req => { tappedRequest = req; },
+                    tapResponse: (req, res) => { tappedRequestAndResponse = [req, res]; },
+                });
+
+                let response = await request.get("http://example.org/");
+                expect(response).to.include(
+                    "This domain is for use in illustrative examples in documents."
+                );
+
+                expect(tappedRequest).to.be.ok;
+                expect(tappedRequestAndResponse).to.be.ok;
+                expect(tappedRequest).to.be.equal(tappedRequestAndResponse?.[0]);
+
+                expect(tappedRequest).to.include({
+                    protocol: 'http',
+                    method: 'GET',
+                    url: 'http://example.org/',
+                    path: '/',
+                });
+                expect(tappedRequest?.headers).to.include({
+                    host: 'example.org',
+                });
+
+                expect(tappedRequestAndResponse?.[1]).to.include({
+                    statusCode: 200,
+                });
+                expect(tappedRequestAndResponse?.[1]?.headers).to.include.keys('content-type', 'content-length');
+                expect(await tappedRequestAndResponse?.[1]?.body.asText()).to.include(
+                    "This domain is for use in illustrative examples in documents."
+                );
+            });
+
             it("should be able to pass through request headers", async () => {
                 await remoteServer.anyRequest().thenCallback(async (req) => ({
                     statusCode: 200,
@@ -130,7 +166,7 @@ nodeOnly(() => {
                     json: { "test": true }
                 });
 
-                expect(response).to.deep.equal({ "test":true });
+                expect(response).to.deep.equal({ "test": true });
             });
 
             it("should be able to pass through requests with a body buffer", async () => {
@@ -180,7 +216,7 @@ nodeOnly(() => {
                 process.env = INITIAL_ENV;
 
                 let response = await request.get(server.urlFor("/"), {
-                    headers: { host: `localhost:${remoteServer.port}`  }
+                    headers: { host: `localhost:${remoteServer.port}` }
                 });
 
                 expect(response).to.equal('remote server');
@@ -538,7 +574,7 @@ nodeOnly(() => {
             it("should use the original body if not overwritten in beforeResponse", async () => {
                 await remoteServer.get('/').thenReply(200, 'real body');
                 await server.get(remoteServer.urlFor("/")).thenPassThrough({
-                    beforeResponse: () => ({ })
+                    beforeResponse: () => ({})
                 });
 
                 let response = await request.get(remoteServer.urlFor("/"));
@@ -765,7 +801,7 @@ nodeOnly(() => {
                         let responsePromise = getDeferred<CompletedResponse>();
                         await server.on('response', (r) => responsePromise.resolve(r));
 
-                        await request.get(badServer.url).catch(() => {});
+                        await request.get(badServer.url).catch(() => { });
 
                         const seenResponse = await responsePromise;
                         expect(seenResponse.tags).to.deep.equal([
@@ -854,7 +890,7 @@ nodeOnly(() => {
                         let responsePromise = getDeferred<CompletedResponse>();
                         await server.on('response', (r) => responsePromise.resolve(r));
 
-                        await request.get(`https://localhost:${oldServerPort}`).catch(() => {});
+                        await request.get(`https://localhost:${oldServerPort}`).catch(() => { });
 
                         const seenResponse = await responsePromise;
                         expect(seenResponse.tags).to.deep.equal([
@@ -1575,7 +1611,7 @@ nodeOnly(() => {
                 const locationWithPath = 'http://localhost:1234/pathIsNotAllowed';
 
                 await expect(server.anyRequest().thenForwardTo(locationWithPath))
-                .to.be.rejectedWith(/Did you mean http:\/\/localhost:1234\?$/g);
+                    .to.be.rejectedWith(/Did you mean http:\/\/localhost:1234\?$/g);
             });
 
             it("updates the host header by default", async () => {
@@ -1872,7 +1908,7 @@ nodeOnly(() => {
             it("can update a JSON body with new fields", async () => {
                 await server.anyRequest().thenPassThrough({
                     transformRequest: {
-                        updateJsonBody:{
+                        updateJsonBody: {
                             a: 100, // Update
                             b: undefined, // Remove
                             c: 2 // Add
@@ -1901,7 +1937,7 @@ nodeOnly(() => {
             it("can update a JSON body while handling encoding automatically", async () => {
                 await server.anyRequest().thenPassThrough({
                     transformRequest: {
-                        updateJsonBody:{
+                        updateJsonBody: {
                             a: 100, // Update
                             b: undefined, // Remove
                             c: 2 // Add
@@ -2166,7 +2202,7 @@ nodeOnly(() => {
             it("can update a JSON body with new fields", async () => {
                 await server.anyRequest().thenPassThrough({
                     transformResponse: {
-                        updateJsonBody:{
+                        updateJsonBody: {
                             'body-value': false, // Update
                             'another-body-value': undefined, // Remove
                             'new-value': 123 // Add
@@ -2198,7 +2234,7 @@ nodeOnly(() => {
                         updateHeaders: {
                             'content-encoding': 'br'
                         },
-                        updateJsonBody:{
+                        updateJsonBody: {
                             'body-value': false, // Update
                             'another-body-value': undefined, // Remove
                             'new-value': 123 // Add
@@ -2323,7 +2359,7 @@ nodeOnly(() => {
                     }
                 });
 
-                await request.get('http://example.org/').catch(() => {});
+                await request.get('http://example.org/').catch(() => { });
 
                 // And it didn't use the proxy
                 expect((await proxyEndpoint.getSeenRequests()).length).to.equal(0);
@@ -2403,7 +2439,7 @@ nodeOnly(() => {
                     }
                 });
 
-                await request.get('http://example.org/').catch(() => {});
+                await request.get('http://example.org/').catch(() => { });
 
                 // And it went via the intermediate proxy
                 expect((await proxyEndpoint.getSeenRequests()).length).to.equal(1);

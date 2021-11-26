@@ -18,7 +18,8 @@ import {
     OngoingBody,
     CompletedBody,
     TimingEvents,
-    InitiatedRequest
+    InitiatedRequest,
+    InitiatedResponse
 } from "../types";
 
 import { nthIndexOf } from './util';
@@ -391,6 +392,22 @@ export function trackResponse(
     trackingStream.on('error', (e) => trackedResponse.emit('error', e));
 
     return trackedResponse;
+}
+
+/**
+ * Build an initiated response: the external representation of a response (throught PassThrough handler):
+ * status and headers were received and sent, but body it not completely streamed yet
+ */
+ export function buildInitiatedResponse(response: OngoingResponse): InitiatedResponse {
+    return _(response).pick([
+        'id',
+        'statusCode',
+        'statusMessage',
+        'timingEvents',
+        'tags'
+    ]).assign({
+        headers: cleanUpHeaders(response.getHeaders()),
+    }).valueOf();
 }
 
 /**

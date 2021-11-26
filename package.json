@@ -35,7 +35,7 @@
     "build:doc": "typedoc src/main.ts",
     "postbuild:doc": "touch ./typedoc/.nojekyll",
     "test": "npm run build && npm run test:node && npm run test:browser",
-    "test:node": "cross-env NODE_EXTRA_CA_CERTS=./test/fixtures/test-ca.pem cross-env TS_NODE_FILES=true mocha -r ts-node/register 'test/**/*.spec.ts'",
+    "test:node": "cross-env NODE_EXTRA_CA_CERTS=./test/fixtures/test-ca.pem cross-env TS_NODE_FILES=true mocha -t 5000 -r ts-node/register 'test/**/*.spec.ts'",
     "test:browser": "npm run with-standalone -- karma start",
     "test:browser:debug": "npm run with-standalone -- karma start --single-run=false --browsers ChromeWithCert",
     "standalone": "npm run build && node -e 'require(\".\").getStandalone({ debug: true }).start()'",
