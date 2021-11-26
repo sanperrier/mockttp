@@ -1,7 +1,7 @@
 {
   "name": "@sanperrier/mockttp",
   "version": "3.0.0-fork.0",
-  "description": "Mock HTTP server for testing HTTP clients and stubbing webservices",
+  "description": "Mock HTTP server for testing HTTP clients and stubbing webservices (forked)",
   "main": "dist/main.js",
   "browser": {
     "dist/main.js": "./dist/main-browser.js",
@@ -45,7 +45,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/httptoolkit/mockttp.git"
+    "url": "git+https://github.com/sanperrier/mockttp.git"
   },
   "keywords": [
     "testing",
@@ -57,12 +57,15 @@
     "http",
     "server"
   ],
-  "author": "Tim Perry <pimterry@gmail.com>",
+  "contributors": [
+    "Tim Perry <pimterry@gmail.com>",
+    "Vyacheslav Dorzhiev <contact@vyacheslavdorzhiev.pro>"
+  ],
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/httptoolkit/mockttp/issues"
+    "url": "https://github.com/sanperrier/mockttp/issues"
   },
-  "homepage": "https://github.com/httptoolkit/mockttp#readme",
+  "homepage": "https://github.com/sanperrier/mockttp#readme",
   "devDependencies": {
     "@graphql-tools/utils": "^7.10.0",
     "@types/base64-arraybuffer": "0.1.0",
