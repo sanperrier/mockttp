@@ -236,6 +236,18 @@ nodeOnly(() => {
                 }).cause.code).to.equal('ECONNRESET');
             });
 
+            it("should be able to pass through upstream connection resets (`handleConnectionResetAs502: true`)", async () => {
+                await remoteServer.anyRequest().thenCloseConnection();
+                await server.get(remoteServer.url).thenPassThrough({ handleConnectionResetAs502: true });
+
+                let response = await request.get(remoteServer.url, {
+                    resolveWithFullResponse: true,
+                    simple: false
+                });
+
+                expect(response.statusCode).to.equal(502);
+            });
+
             it("should be able to run a callback that checks the request's data", async () => {
                 await remoteServer.get('/').thenReply(200, 'GET');
 

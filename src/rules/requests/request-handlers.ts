@@ -498,6 +498,15 @@ export interface PassThroughHandlerOptions {
     ignoreHostHttpsErrors?: string[];
 
     /**
+     * If host closes socket unexpectedly (ECONNRESET error), proxy should:  
+     * if `true` - reply with `502` status code,
+     * if `false` - just close client socket (replicate host behaviour).
+     * 
+     * `false` by default
+     */
+    handleConnectionResetAs502?: boolean;
+
+    /**
      * Deprecated alias for ignoreHostHttpsErrors.
      * @deprecated
      */
@@ -548,6 +557,8 @@ export interface PassThroughHandlerOptions {
      * A callback that will be passed the ongoing client response.
      * `null` indicates that response was not delivered (eg. socket error)
      * @note is not implemented for remote client
+     * 
+     * @todo Implement error handling
      */
     tapResponse?: (req: InitiatedRequest & { body: OngoingBody }, res: (InitiatedResponse & { body: OngoingBody }) | null) => MaybePromise<void>;
 
@@ -726,6 +737,7 @@ interface SerializedPassThroughData {
     forwarding?: ForwardingOptions;
     proxyConfig?: SerializedProxyConfig;
     ignoreHostCertificateErrors?: string[]; // Doesn't match option name, backward compat
+    handleConnectionResetAs502: boolean;
     clientCertificateHostMap?: { [host: string]: { pfx: string, passphrase?: string } };
     lookupOptions?: PassThroughLookupOptions;
 
@@ -949,6 +961,7 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
     public readonly forwarding?: ForwardingOptions;
 
     public readonly ignoreHostHttpsErrors: string[] = [];
+    public readonly handleConnectionResetAs502: boolean;
     public readonly clientCertificateHostMap: {
         [host: string]: { pfx: Buffer, passphrase?: string }
     };
@@ -1022,6 +1035,8 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
         if (!Array.isArray(this.ignoreHostHttpsErrors)) {
             throw new Error("ignoreHostHttpsErrors must be an array");
         }
+
+        this.handleConnectionResetAs502 = options.handleConnectionResetAs502 ?? false;
 
         this.lookupOptions = options.lookupOptions;
         this.clientCertificateHostMap = options.clientCertificateHostMap || {};
@@ -1593,14 +1608,14 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
                     }
                     clientRes.tags.push('passthrough-error:' + e.code);
 
-                    if (e.code === 'ECONNRESET') {
+                    if (e.code === 'ECONNRESET' && !this.handleConnectionResetAs502) {
                         // The upstream socket closed: forcibly close the downstream stream to match
                         const socket: net.Socket = (clientReq as any).socket;
                         socket.destroy();
                         reject(new AbortError('Upstream connection was reset'));
                     } else {
                         e.statusCode = 502;
-                        e.statusMessage = 'Error communicating with upstream server';
+                        e.statusMessage = 'Bad Gateway';
                         reject(e);
                     }
                 });
@@ -1685,6 +1700,7 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
             proxyConfig: serializeProxyConfig(this.proxyConfig, channel),
             lookupOptions: this.lookupOptions,
             ignoreHostCertificateErrors: this.ignoreHostHttpsErrors,
+            handleConnectionResetAs502: this.handleConnectionResetAs502,
             clientCertificateHostMap: _.mapValues(this.clientCertificateHostMap,
                 ({ pfx, passphrase }) => ({ pfx: serializeBuffer(pfx), passphrase })
             ),
@@ -1816,6 +1832,7 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
             forwarding: data.forwarding,
             lookupOptions: data.lookupOptions,
             ignoreHostHttpsErrors: data.ignoreHostCertificateErrors,
+            handleConnectionResetAs502: data.handleConnectionResetAs502,
             clientCertificateHostMap: _.mapValues(data.clientCertificateHostMap,
                 ({ pfx, passphrase }) => ({ pfx: deserializeBuffer(pfx), passphrase })
             ),
