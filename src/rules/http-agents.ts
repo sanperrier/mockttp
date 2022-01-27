@@ -16,6 +16,8 @@ const KeepAliveAgents = isNode
         })
     } : {};
 
+const proxyAgents = new Map<string, http.Agent>();
+
 export async function getAgent({
     protocol, hostname, port, tryHttp2, keepAlive, proxySettingSource
 }: {
@@ -35,7 +37,14 @@ export async function getAgent({
         if (!matchesNoProxy(hostname, port, proxySetting.noProxy)) {
             // We notably ignore HTTP/2 upstream in this case: it's complicated to mix that up with proxying
             // so for now we ignore it entirely.
-            return new ProxyAgent(proxySetting.proxyUrl) as http.Agent;
+
+            let proxyAgent = proxyAgents.get(proxySetting.proxyUrl);
+            if (!proxyAgent) {
+                proxyAgent = new ProxyAgent(proxySetting.proxyUrl) as http.Agent;
+                proxyAgents.set(proxySetting.proxyUrl, proxyAgent);
+            }
+
+            return proxyAgent;
         }
     }
 
