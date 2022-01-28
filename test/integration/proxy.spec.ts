@@ -795,7 +795,6 @@ nodeOnly(() => {
 
                     it("should refuse to pass through requests", async () => {
                         await badServer.anyRequest().thenReply(200);
-
                         await server.anyRequest().thenPassThrough();
 
                         let response = await request.get(badServer.url, {

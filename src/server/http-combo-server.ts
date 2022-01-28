@@ -11,6 +11,7 @@ import { TlsRequest } from '../types';
 import { destroyable, DestroyableServer } from '../util/destroyable-server';
 import { getCA, CAOptions } from '../util/tls';
 import { delay } from '../util/util';
+import type ILogger from '@linked-helper/framework.utils.logger';
 
 // Hardcore monkey-patching: force TLSSocket to link servername & remoteAddress to
 // sockets as soon as they're available, without waiting for the handshake to fully
@@ -102,8 +103,6 @@ function getCauseFromError(error: Error & { code?: string }) {
         ? 'reset'
     : 'unknown'; // Something \else.
 
-    if (cause === 'unknown') console.log('Unknown TLS error:', error);
-
     return cause;
 }
 
@@ -146,7 +145,8 @@ function buildTlsError(
 export async function createComboServer(
     options: ComboServerOptions,
     requestListener: (req: http.IncomingMessage, res: http.ServerResponse) => void,
-    tlsClientErrorListener: (socket: tls.TLSSocket, req: TlsRequest) => void
+    tlsClientErrorListener: (socket: tls.TLSSocket, req: TlsRequest) => void,
+    logger: ILogger
 ): Promise<DestroyableServer> {
     let server: net.Server;
     if (!options.https) {
@@ -166,7 +166,7 @@ export async function createComboServer(
                     // false
                 : ['http/1.1'],
             SNICallback: (domain: string, cb: Function) => {
-                if (options.debug) console.log(`Generating certificate for ${domain}`);
+                logger.event?.(`generating certificate for ${domain}`);
 
                 try {
                     const generatedCert = ca.generateCertificate(domain);
@@ -176,7 +176,7 @@ export async function createComboServer(
                         ca: generatedCert.ca
                     }));
                 } catch (e) {
-                    console.error('Cert generation error', e);
+                    logger.error?.(`failed to generate certificate`, e, { domain });
                     cb(e);
                 }
             }
@@ -223,7 +223,13 @@ export async function createComboServer(
     });
 
     server.on('tlsClientError', (error: Error, socket: tls.TLSSocket) => {
-        tlsClientErrorListener(socket, buildTlsError(socket, getCauseFromError(error)));
+        const cause = getCauseFromError(error);
+
+        if (cause === 'unknown') {
+            logger.warn?.('unknown TLS error', error);
+        }
+
+        tlsClientErrorListener(socket, buildTlsError(socket, cause));
     });
 
     // If the server receives a HTTP/HTTPS CONNECT request, Pretend to tunnel, then just re-handle:
@@ -241,7 +247,7 @@ export async function createComboServer(
     function handleH1Connect(req: http.IncomingMessage, socket: net.Socket) {
         // Clients may disconnect at this point (for all sorts of reasons), but here
         // nothing else is listening, so we need to catch errors on the socket:
-        socket.once('error', (e) => console.log('Error on client socket', e));
+        socket.once('error', (e) => logger.warn?.('error on client socket', e));
 
         const connectUrl = req.url || req.headers['host'];
         if (!connectUrl) {
@@ -250,7 +256,7 @@ export async function createComboServer(
             return;
         }
 
-        if (options.debug) console.log(`Proxying HTTP/1 CONNECT to ${connectUrl}`);
+        logger.event?.(`proxying HTTP/1 CONNECT to ${connectUrl}`);
 
         socket.write('HTTP/' + req.httpVersion + ' 200 OK\r\n\r\n', 'utf-8', () => {
             socket.__timingInfo!.tunnelSetupTimestamp = now();
@@ -268,7 +274,7 @@ export async function createComboServer(
              return;
         }
 
-        if (options.debug) console.log(`Proxying HTTP/2 CONNECT to ${connectUrl}`);
+        logger.event?.(`proxying HTTP/2 CONNECT to ${connectUrl}`);
 
         // Send a 200 OK response, and start the tunnel:
         res.writeHead(200, {});

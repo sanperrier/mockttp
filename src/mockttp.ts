@@ -1,5 +1,6 @@
 import { stripIndent } from "common-tags";
 import * as cors from 'cors';
+import type ILogger from '@linked-helper/framework.utils.logger';
 
 import { CAOptions } from './util/tls';
 
@@ -455,6 +456,8 @@ export interface Mockttp {
 }
 
 export interface MockttpOptions {
+    logger?: ILogger
+
     /**
      * Should the server automatically respond to OPTIONS requests with a permissive
      * response?
@@ -548,6 +551,7 @@ export interface MockttpOptions {
 export abstract class AbstractMockttp {
     protected corsOptions: boolean | cors.CorsOptions;
     protected debug: boolean;
+    protected logger: ILogger;
     protected recordTraffic: boolean;
     protected suggestChanges: boolean;
     protected ignoreWebsocketHostCertificateErrors: string[];
@@ -557,6 +561,39 @@ export abstract class AbstractMockttp {
 
     constructor(options: MockttpOptions) {
         this.debug = options.debug || false;
+        this.logger = options.logger ?? (() => {
+            const log = ((...args: any[]) => {
+                console.log('mockttp:', ...args);
+            }) as any as ILogger['log'];
+
+            log!.warn = (...args: any[]) => {
+                console.warn('mockttp:warn:', ...args);
+            };
+
+            log!.event = (...args: any[]) => {
+                console.info('mockttp:event:', ...args);
+            };
+
+            return {
+                error: (...args: any[]) => {
+                    console.error('mockttp:error:', ...args);
+                },
+                warn: (...args: any[]) => {
+                    console.warn('mockttp:warn:', ...args);
+                },
+                log: log,
+                event: (...args: any[]) => {
+                    if (this.debug) {
+                        console.info('mockttp:event:', ...args);
+                    }
+                },
+                debug: (...args: any[]) => {
+                    if (this.debug) {
+                        console.debug('mockttp:debug:', ...args);
+                    }
+                },
+            };
+        })();
         this.corsOptions = options.cors || false;
         this.recordTraffic = options.recordTraffic !== undefined
             ? options.recordTraffic

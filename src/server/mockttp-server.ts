@@ -11,6 +11,8 @@ import cors = require("cors");
 import now = require("performance-now");
 import _ = require("lodash");
 
+import type ILogger from '@linked-helper/framework.utils.logger';
+
 import {
     InitiatedRequest,
     OngoingRequest,
@@ -98,11 +100,11 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
         this.app = connect();
 
         if (this.corsOptions) {
-            if (this.debug) console.log('Enabling CORS');
-
             const corsOptions = this.corsOptions === true
                 ? { methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'] }
                 : this.corsOptions;
+
+            this.logger.debug?.('enable CORS', corsOptions);
 
             this.app.use(cors(corsOptions) as connect.HandleFunction);
         }
@@ -118,13 +120,17 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
                 stopPort: portParam.endPort
             });
 
-        if (this.debug) console.log(`Starting mock server on port ${port}`);
+        this.logger.debug?.(`starting on port ${port}`, {
+            https: this.httpsOptions,
+            http2: this.isHttp2Enabled,
+            maxBodySize: this.maxBodySize,
+        });
 
         this.server = await createComboServer({
             debug: this.debug,
             https: this.httpsOptions,
             http2: this.isHttp2Enabled,
-        }, this.app, this.announceTlsErrorAsync.bind(this));
+        }, this.app, this.announceTlsErrorAsync.bind(this), this.logger);
 
         this.server!.listen(port);
 
@@ -141,32 +147,41 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
 
         this.server!.on('upgrade', this.handleWebSocket.bind(this));
 
-        return new Promise<void>((resolve, reject) => {
-            this.server!.on('listening', resolve);
-            this.server!.on('error', (e: any) => {
-                // Although we try to pick a free port, we may have race conditions, if something else
-                // takes the same port at the same time. If you haven't explicitly picked a port, and
-                // we do have a collision, simply try again.
-                if (e.code === 'EADDRINUSE' && !_.isNumber(portParam)) {
-                    if (this.debug) console.log('Address in use, retrying...');
+        try {
+            const actualPort = await new Promise<void>((resolve, reject) => {
+                this.server!.on('listening', resolve);
+                this.server!.on('error', (e: any) => {
+                    // Although we try to pick a free port, we may have race conditions, if something else
+                    // takes the same port at the same time. If you haven't explicitly picked a port, and
+                    // we do have a collision, simply try again.
+                    if (e.code === 'EADDRINUSE' && !_.isNumber(portParam)) {
+                        this.logger.event?.('address in use, retrying...');
 
-                    // Destroy just in case there is something that needs cleanup here. Catch because most
-                    // of the time this will error with 'Server is not running'.
-                    this.server!.destroy().catch(() => {});
-                    resolve(this.start());
-                } else {
-                    reject(e);
-                }
+                        // Destroy just in case there is something that needs cleanup here. Catch because most
+                        // of the time this will error with 'Server is not running'.
+                        this.server!.destroy().catch(() => { });
+                        resolve(this.start());
+                    } else {
+                        reject(e);
+                    }
+                });
             });
-        });
+
+            this.logger.event?.(`started on port ${actualPort}`);
+        } catch (e) {
+            this.logger.error?.(`failed to start`, e);
+            throw e;
+        }
     }
 
     async stop(): Promise<void> {
-        if (this.debug) console.log(`Stopping server at ${this.url}`);
+        this.logger.debug?.(`stopping at ${this.url}`);
 
         if (this.server) await this.server.destroy();
 
         this.reset();
+
+        this.logger.event?.(`stopped`);
     }
 
     enableDebug() {
@@ -303,6 +318,7 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
     private announceInitialRequestAsync(request: OngoingRequest) {
         setImmediate(() => {
             const initiatedReq = buildInitiatedRequest(request);
+            this.logger.event?.('request initiated', { id: request.id, method: request.method, url: request.url });
             this.eventEmitter.emit('request-initiated', Object.assign(
                 initiatedReq,
                 {
@@ -316,20 +332,22 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
     private announceCompletedRequestAsync(request: OngoingRequest) {
         setImmediate(() => {
             waitForCompletedRequest(request)
-            .then((completedReq: CompletedRequest) => {
-                this.eventEmitter.emit('request', Object.assign(
-                    completedReq,
-                    {
-                        timingEvents: _.clone(completedReq.timingEvents),
-                        tags: _.clone(completedReq.tags)
-                    }
-                ));
-            })
-            .catch(console.error);
+                .then((completedReq: CompletedRequest) => {
+                    this.logger.event?.('request completed', { id: request.id, method: request.method, url: request.url });
+                    this.eventEmitter.emit('request', Object.assign(
+                        completedReq,
+                        {
+                            timingEvents: _.clone(completedReq.timingEvents),
+                            tags: _.clone(completedReq.tags)
+                        }
+                    ));
+                })
+                .catch(e => this.logger.log?.warn('failed to wait for completed request', e, { id: request.id, method: request.method, url: request.url }));
         });
     }
 
-    private announceResponseAsync(response: OngoingResponse) {
+    private announceResponseAsync(request: OngoingRequest, response: OngoingResponse) {
+        this.logger.event?.('response received', { id: request.id, method: request.method, url: request.url, statusCode: response.statusCode, statusMessage: response.statusMessage });
         setImmediate(() => {
             if (this.eventEmitter.listenerCount('response')) {
                 waitForCompletedResponse(response)
@@ -339,7 +357,7 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
                             tags: _.clone(res.tags)
                         }));
                     })
-                    .catch(console.error);
+                    .catch(e => this.logger.log?.warn('failed to wait for completed response', e, { id: request.id, method: request.method, url: request.url, statusCode: response.statusCode, statusMessage: response.statusMessage }));
             }
         });
     }
@@ -347,6 +365,7 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
     private async announceAbortAsync(request: OngoingRequest) {
         setImmediate(() => {
             const req = buildAbortedRequest(request);
+            this.logger.event?.('request aborted', { id: request.id, method: request.method, url: request.url });
             this.eventEmitter.emit('abort', Object.assign(req, {
                 timingEvents: _.clone(req.timingEvents),
                 tags: _.clone(req.tags)
@@ -361,7 +380,7 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
         setImmediate(() => {
             // We can get falsey but set hostname values - drop them
             if (!request.hostname) delete request.hostname;
-            if (this.debug) console.warn(`TLS client error: ${JSON.stringify(request)}`);
+            this.logger.log?.warn('TLS client error', new Error(request.failureCause), { request });
             this.eventEmitter.emit('tls-client-error', request);
             this.eventEmitter.emit('tlsClientError', request);
         });
@@ -376,12 +395,15 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
         ) return;
 
         setImmediate(() => {
-            if (this.debug) console.warn(`Client error: ${JSON.stringify(error)}`);
+            this.logger.log?.warn('client error', new Error(error.errorCode), { code: error.errorCode, id: error.request.id, method: error.request.method, url: error.request.url, request: error.request, response: error.response });
             this.eventEmitter.emit('client-error', error);
         });
     }
 
     private preprocessRequest(req: ExtendedRawRequest): OngoingRequest {
+        const id = uuid();
+        this.logger.debug?.('preprocess request', { id, method: req.method, url: req.url });
+
         parseRequestBody(req, { maxSize: this.maxBodySize });
 
         // Make req.url always absolute, if it isn't already, using the host header.
@@ -409,9 +431,10 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
             req.path = getPathFromAbsoluteUrl(req.url!);
         }
 
-        const id = uuid();
         const timingEvents = { startTime: Date.now(), startTimestamp: now() };
         const tags: string[] = [];
+
+        this.logger.debug?.('preprocessed request', { req: { id, ...req, body: '...', remoteIpAddress: req.socket.remoteAddress  } });
 
         return Object.assign(req, {
             id,
@@ -423,7 +446,7 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
 
     private async handleRequest(rawRequest: ExtendedRawRequest, rawResponse: http.ServerResponse) {
         const request = this.preprocessRequest(rawRequest);
-        if (this.debug) console.log(`Handling request for ${rawRequest.url}`);
+        this.logger.event?.('handling request', { id: request.id, method: request.method, url: request.url });
 
         let result: 'responded' | 'aborted' | null = null;
         const abort = () => {
@@ -449,7 +472,7 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
         );
         response.id = request.id;
         response.on('error', (error) => {
-            console.log('Response error:', this.debug ? error : error.message);
+            this.logger.log?.warn('response error', error, { id: response.id, method: request.method, url: request.url });
             abort();
         });
 
@@ -467,28 +490,27 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
 
             let nextRule = await nextRulePromise;
             if (nextRule) {
-                if (this.debug) console.log(`Request matched rule: ${nextRule.explain()}`);
+                this.logger.event?.('request matched rule', { id: request.id, method: request.method, url: request.url, rule: nextRule.explain() });
                 await nextRule.handle(request, response, this.recordTraffic);
             } else if (this.fallbackRequestRule) {
+                this.logger.event?.('request matched fallback rule', { id: request.id, method: request.method, url: request.url, rule: this.fallbackRequestRule.explain() });
                 await this.fallbackRequestRule.handle(request, response, this.recordTraffic);
             } else {
+                this.logger.event?.('request is unmatched', { id: request.id, method: request.method, url: request.url });
                 await this.sendUnmatchedRequestError(request, response);
             }
             result = result || 'responded';
         } catch (e) {
             if (e instanceof AbortError) {
                 abort();
-
-                if (this.debug) {
-                    console.error("Failed to handle request due to abort:", e);
-                }
+                this.logger.event?.('failed to handle request due to abort', { id: request.id, method: request.method, url: request.url, abortError: e });
             } else {
-                console.error("Failed to handle request:", this.debug ? e : e.message);
+                this.logger.error?.('failed to handle request', e, { id: request.id, method: request.method, url: request.url });
 
                 // Do whatever we can to tell the client we broke
                 try {
                     response.writeHead(e.statusCode || 500, e.statusMessage || 'Server error');
-                } catch (e) {}
+                } catch (e) { }
 
                 try {
                     response.end(e.toString());
@@ -500,17 +522,17 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
         }
 
         if (result === 'responded') {
-            this.announceResponseAsync(response);
+            this.announceResponseAsync(request, response);
         }
     }
 
     async handleWebSocket(rawRequest: ExtendedRawRequest, socket: net.Socket, head: Buffer) {
-        if (this.debug) console.log(`Handling websocket for ${rawRequest.url}`);
-
         const request = this.preprocessRequest(rawRequest);
 
+        this.logger.event?.('handling ws request', { id: request.id, method: request.method, url: request.url });
+
         socket.on('error', (error) => {
-            console.log('Response error:', this.debug ? error : error.message);
+            this.logger.log?.warn('ws response error', error, { id: request.id, method: request.method, url: request.url });
             socket.destroy();
         });
 
@@ -519,9 +541,10 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
 
             let nextRule = await nextRulePromise;
             if (nextRule) {
-                if (this.debug) console.log(`Websocket matched rule: ${nextRule.explain()}`);
+                this.logger.event?.('ws request matched rule', { id: request.id, method: request.method, url: request.url, rule: nextRule.explain() });
                 await nextRule.handle(request, socket, head, this.recordTraffic);
             } else {
+                this.logger.event?.('ws is unmatched', { id: request.id, method: request.method, url: request.url });
                 // Unmatched requests get passed through untouched automatically. This exists for
                 // historical/backward-compat reasons, to match the initial WS implementation, and
                 // will probably be removed to match handleRequest in future.
@@ -529,11 +552,9 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
             }
         } catch (e) {
             if (e instanceof AbortError) {
-                if (this.debug) {
-                    console.error("Failed to handle websocket due to abort:", e);
-                }
+                this.logger.event?.('failed to handle ws request due to abort', { id: request.id, method: request.method, url: request.url, abortError: e });
             } else {
-                console.error("Failed to handle websocket:", this.debug ? e : e.message);
+                this.logger.error?.('failed to handle ws request', e, { id: request.id, method: request.method, url: request.url, abortError: e });
                 this.sendWebSocketErrorResponse(socket, e);
             }
         }
@@ -565,18 +586,18 @@ export class MockttpServer extends AbstractMockttp implements Mockttp {
 
     private async getUnmatchedRequestExplanation(request: OngoingRequest) {
         let requestExplanation = await this.explainRequest(request);
-        if (this.debug) console.warn(`Unmatched request received: ${requestExplanation}`);
+        this.logger.warn?.(`Unmatched request received: ${requestExplanation}`, null, { id: request.id, method: request.method, url: request.url });
 
         return `No rules were found matching this request.
 This request was: ${requestExplanation}
 
 ${(this.requestRules.length > 0 || this.webSocketRules.length > 0)
-    ? `The configured rules are:
+                ? `The configured rules are:
 ${this.requestRules.map((rule) => rule.explain()).join("\n")}
 ${this.webSocketRules.map((rule) => rule.explain()).join("\n")}
 `
-    : "There are no rules configured."
-}
+                : "There are no rules configured."
+            }
 ${await this.suggestRule(request)}`
     }
 
@@ -727,11 +748,11 @@ ${await this.suggestRule(request)}`
                     statusCode:
                         isHeaderOverflow
                             ? 431
-                        : 400,
+                            : 400,
                     statusMessage:
                         isHeaderOverflow
                             ? "Request Header Fields Too Large"
-                        : "Bad Request",
+                            : "Bad Request",
                     body: buildBodyReader(Buffer.from([]), {})
                 };
 
@@ -784,9 +805,8 @@ ${await this.suggestRule(request)}`
                 // Best guesses:
                 timingEvents: { startTime: Date.now(), startTimestamp: now() } as TimingEvents,
                 protocol: isTLS ? "https" : "http",
-                url: isTLS ? `https://${
-                    (socket as tls.TLSSocket).servername // Use the hostname from SNI
-                }/` : undefined,
+                url: isTLS ? `https://${(socket as tls.TLSSocket).servername // Use the hostname from SNI
+                    }/` : undefined,
 
                 // Unknowable:
                 path: undefined,
