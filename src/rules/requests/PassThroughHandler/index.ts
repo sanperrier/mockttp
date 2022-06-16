@@ -187,22 +187,20 @@ export interface PassThroughHandlerOptions {
      * A callback that will be passed the ongoing client response.
      * `null` indicates that response was not delivered (eg. socket error)
      * @note is not implemented for remote client
-     * 
-     * @todo Implement error handling
      */
-    tapResponse?: (req: InitiatedRequest & { body: OngoingBody }, res: (InitiatedResponse & { body: OngoingBody }) | null) => MaybePromise<void>;
+    tapResponse?: (req: InitiatedRequest & { body: OngoingBody }, res: (InitiatedResponse & { body: OngoingBody })) => MaybePromise<void>;
 
     /**
      * A callback that will be passed client request (any transformations ignored) and error in case request failed
      * @note is not implemented for remote client
      */
-     tapRequestFailed?: (req: InitiatedRequest & { body: OngoingBody }, error: any) => MaybePromise<void>;
+    tapRequestFailed?: (req: InitiatedRequest & { body: OngoingBody }, error: any) => MaybePromise<void>;
 
      /**
       * A callback that will be passed client request (any transformations ignored) in case request was cancelled by client
       * @note is not implemented for remote client
       */
-     tapRequestCancelled?: (req: InitiatedRequest & { body: OngoingBody }) => MaybePromise<void>;
+    tapRequestCancelled?: (req: InitiatedRequest & { body: OngoingBody }) => MaybePromise<void>;
 
      /**
      * A set of data to automatically transform a request. This includes properties
