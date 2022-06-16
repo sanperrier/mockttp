@@ -187,6 +187,18 @@ export interface PassThroughHandlerOptions {
     tapResponse?: (req: InitiatedRequest & { body: OngoingBody }, res: (InitiatedResponse & { body: OngoingBody }) | null) => MaybePromise<void>;
 
     /**
+     * A callback that will be passed client request (any transformations ignored) and error in case request failed
+     * @note is not implemented for remote client
+     */
+    tapRequestFailed?: (req: InitiatedRequest & { body: OngoingBody }, error: any) => MaybePromise<void>;
+
+    /**
+     * A callback that will be passed client request (any transformations ignored) in case request was cancelled by client
+     * @note is not implemented for remote client
+     */
+    tapRequestCancelled?: (req: InitiatedRequest & { body: OngoingBody }) => MaybePromise<void>;
+
+    /**
      * A set of data to automatically transform a request. This includes properties
      * to support many transformation common use cases.
      *
@@ -410,8 +422,10 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
         [host: string]: { pfx: Buffer, passphrase?: string }
     };
 
-    public readonly tapRequest?: (req: InitiatedRequest & { body: OngoingBody }) => MaybePromise<void>;
-    public readonly tapResponse?: (req: InitiatedRequest & { body: OngoingBody }, res: InitiatedResponse & { body: OngoingBody } | null) => MaybePromise<void>;
+    public readonly tapRequest: PassThroughHandlerOptions['tapRequest'];
+    public readonly tapResponse: PassThroughHandlerOptions['tapResponse'];
+    public readonly tapRequestFailed: PassThroughHandlerOptions['tapRequestFailed'];
+    public readonly tapRequestCancelled: PassThroughHandlerOptions['tapRequestCancelled'];
 
     public readonly transformRequest?: RequestTransform;
     public readonly transformResponse?: ResponseTransform;
@@ -532,6 +546,8 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
 
         this.tapRequest = options.tapRequest;
         this.tapResponse = options.tapResponse;
+        this.tapRequestFailed = options.tapRequestFailed;
+        this.tapRequestCancelled = options.tapRequestCancelled;
 
         if (options.beforeRequest && options.transformRequest && !_.isEmpty(options.transformRequest)) {
             throw new Error("BeforeRequest and transformRequest options are mutually exclusive");
@@ -845,13 +861,17 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
         }
 
         let tappedRequest: InitiatedRequest & { body: OngoingBody } | undefined;
-        let tappedResponse: InitiatedResponse & { body: OngoingBody } | null | undefined;
-        if (this.tapRequest) {
+        let tappedResponse: InitiatedResponse & { body: OngoingBody } | undefined;
+
+        if (this.tapRequest || this.tapResponse || this.tapRequestFailed || this.tapRequestCancelled) {
             tappedRequest = {
                 ...buildInitiatedRequest(clientReq),
                 body: clientReq.body
             };
-            this.tapRequest(tappedRequest);
+
+            if (this.tapRequest) {
+                this.tapRequest(tappedRequest);
+            }
         }
 
         let serverReq: http.ClientRequest;
@@ -1040,7 +1060,7 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
                             // A surprising number of real sites have slightly invalid headers
                             // (e.g. extra spaces). If we hit any, we just drop that header
                             // and print a warning.
-                            this.logger.log?.warn(`Error setting header on passthrough response`, e, { ..._logReq, headerName: header, headerValue });
+                            this.logger.log?.warn(`Error setting header on passthrough response`, e as any, { ..._logReq, headerName: header, headerValue });
                         }
                     });
 
@@ -1061,6 +1081,7 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
                     if (resBodyOverride) {
                         // Return the override data to the client:
                         clientRes.end(resBodyOverride);
+                        clientRes.removeListener('close', onClientResClose);
                         // Dump the real response data:
                         serverRes.resume();
 
@@ -1069,6 +1090,7 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
                         this.logger.event?.('server response body streaming to client', { ..._logReq });
                         serverRes.pipe(clientRes);
                         serverRes.once('end', () => {
+                            clientRes.removeListener('close', onClientResClose);
                             this.logger.event?.('server response body streamed to client', { ..._logReq });
                             resolve();
                         });
@@ -1118,17 +1140,38 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
                     });
                 }
 
-                // If the downstream connection aborts, before the response has been completed,
-                // we also abort the upstream connection. Important to avoid unnecessary connections,
-                // and to correctly proxy client connection behaviour to the upstream server.
-                function abortUpstream() {
+                const onClientReqAborted = () => {
+                    this.logger.event?.('client request aborted', { ..._logReq });
+
+                    if (this.tapRequestCancelled && tappedRequest) {
+                        this.tapRequestCancelled(tappedRequest);
+                        tappedRequest = undefined;
+                        tappedResponse = undefined;
+                    }
+
+                    // If the downstream connection aborts, before the response has been completed,
+                    // we also abort the upstream connection. Important to avoid unnecessary connections,
+                    // and to correctly proxy client connection behaviour to the upstream server.
                     serverReq.abort();
                 }
-                clientReq.on('aborted', () => {
-                    this.logger.event?.('client request aborted', { ..._logReq });
-                    abortUpstream();
+                clientReq.on('aborted', onClientReqAborted);
+
+                const onClientResClose = () => {
+                    this.logger.event?.('client response close unexpectedly', { ..._logReq });
+                    // In Node 16+ we don't get an abort event in many cases, just closes, but we know
+                    // it's aborted because the response is closed with no other result being set.
+                    if (this.tapRequestCancelled && tappedRequest) {
+                        this.tapRequestCancelled(tappedRequest);
+                        tappedRequest = undefined;
+                        tappedResponse = undefined;
+                    }
+                };
+                clientRes.once('close', onClientResClose);
+
+                clientRes.once('finish', () => {
+                    clientReq.removeListener('aborted', onClientReqAborted);
+                    clientRes.removeListener('close', onClientResClose);
                 });
-                clientRes.once('finish', () => clientReq.removeListener('aborted', abortUpstream));
 
                 serverReq.on('error', (e: any) => {
                     if ((<any>serverReq).aborted) return;
@@ -1169,7 +1212,11 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
                 reject(e);
             }));
         } catch (e) {
-            tappedResponse = null;
+            if (this.tapRequestFailed && tappedRequest) {
+                this.tapRequestFailed(tappedRequest, e);
+                tappedRequest = undefined;
+                tappedResponse = undefined;
+            }
             throw e;
         } finally {
             if (this.tapResponse) {

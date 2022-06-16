@@ -92,48 +92,115 @@ nodeOnly(() => {
             });
 
             it("should be able to pass through requests", async () => {
-                await server.get("http://example.org/").thenPassThrough();
+                await remoteServer.anyRequest().thenReply(200, 'some text');
+                await server.get(remoteServer.url).thenPassThrough();
 
-                let response = await request.get("http://example.org/");
-                expect(response).to.include(
-                    "This domain is for use in illustrative examples in documents."
-                );
+                let response = await request.get(remoteServer.url);
+                expect(response).to.include('some text');
             });
 
-            it("should be able to pass through requests tapping into request and response", async () => {
-                let tappedRequest: InitiatedRequest & { body: OngoingBody } | undefined;
-                let tappedRequestAndResponse: [InitiatedRequest & { body: OngoingBody }, InitiatedResponse & { body: OngoingBody } | null] | undefined;
-                await server.get("http://example.org/").thenPassThrough({
-                    tapRequest: req => { tappedRequest = req; },
-                    tapResponse: (req, res) => { tappedRequestAndResponse = [req, res]; },
+            describe("should be able to pass through requests tapping into request and response", () => {
+                it("successful response", async () => {
+                    await remoteServer.anyRequest().thenJson(200, { text: 'some text' });
+
+                    let tappedRequest: InitiatedRequest & { body: OngoingBody } | undefined;
+                    let tappedRequestFailed: [InitiatedRequest & { body: OngoingBody }, any] | undefined;
+                    let tappedRequestAndResponse: [InitiatedRequest & { body: OngoingBody }, InitiatedResponse & { body: OngoingBody } | null] | undefined;
+                    let tappedRequestCancelled: InitiatedRequest & { body: OngoingBody } | undefined;
+
+                    await server.anyRequest().thenPassThrough({
+                        tapRequest: req => { tappedRequest = req; },
+                        tapResponse: (req, res) => { tappedRequestAndResponse = [req, res]; },
+                        tapRequestFailed: (req, error) => { tappedRequestFailed = [req, error]; },
+                        tapRequestCancelled: req => { tappedRequestCancelled = req; }
+                    });
+
+                    let response = await request.get(remoteServer.url);
+                    expect(response).to.include('some text');
+
+                    expect(tappedRequest).to.be.ok;
+                    expect(tappedRequest).to.include({
+                        protocol: 'http',
+                        method: 'GET',
+                        url: remoteServer.url + '/',
+                        path: '/',
+                    });
+                    expect(tappedRequest?.headers).to.include({
+                        host: new URL(remoteServer.url).host,
+                    });
+
+                    expect(tappedRequestAndResponse).to.be.ok;
+                    expect(tappedRequestAndResponse?.[0]).to.be.equal(tappedRequest);
+
+                    const tappedResponse = tappedRequestAndResponse?.[1];
+                    expect(tappedResponse).to.include({
+                        statusCode: 200,
+                    });
+                    expect(tappedResponse?.headers).to.include.keys('content-type', 'content-length');
+                    expect(await tappedResponse?.body.asText()).to.include("some text");
+
+                    expect(tappedRequestFailed).to.be.undefined;
+                    expect(tappedRequestCancelled).to.be.undefined;
                 });
 
-                let response = await request.get("http://example.org/");
-                expect(response).to.include(
-                    "This domain is for use in illustrative examples in documents."
-                );
+                it("failed request (server closed)", async () => {
+                    await remoteServer.anyRequest().thenCloseConnection();
 
-                expect(tappedRequest).to.be.ok;
-                expect(tappedRequestAndResponse).to.be.ok;
-                expect(tappedRequest).to.be.equal(tappedRequestAndResponse?.[0]);
+                    let tappedRequest: InitiatedRequest & { body: OngoingBody } | undefined;
+                    let tappedRequestFailed: [InitiatedRequest & { body: OngoingBody }, any] | undefined;
+                    let tappedRequestAndResponse: [InitiatedRequest & { body: OngoingBody }, InitiatedResponse & { body: OngoingBody } | null] | undefined;
+                    let tappedRequestCancelled: InitiatedRequest & { body: OngoingBody } | undefined;
 
-                expect(tappedRequest).to.include({
-                    protocol: 'http',
-                    method: 'GET',
-                    url: 'http://example.org/',
-                    path: '/',
-                });
-                expect(tappedRequest?.headers).to.include({
-                    host: 'example.org',
+                    await server.get(remoteServer.url).thenPassThrough({
+                        tapRequest: req => { tappedRequest = req; },
+                        tapResponse: (req, res) => { tappedRequestAndResponse = [req, res]; },
+                        tapRequestFailed: (req, error) => { tappedRequestFailed = [req, error]; },
+                        tapRequestCancelled: req => { tappedRequestCancelled = req; }
+                    });
+
+                    let response = await request.get(remoteServer.url).catch((e) => e);
+
+                    expect(response).to.be.instanceOf(Error);
+                    expect((response as Error & {
+                        cause: { code: string }
+                    }).cause.code).to.equal('ECONNRESET');
+
+                    expect(tappedRequest).to.be.ok;
+                    expect(tappedRequestAndResponse).to.be.undefined;
+                    expect(tappedRequestFailed).to.be.ok;
+                    expect(tappedRequestFailed?.[0]).to.be.equal(tappedRequest);
+
+                    const tappedError = tappedRequestFailed?.[1];
+                    expect(tappedError).to.be.instanceOf(Error);
+
+                    expect(tappedRequestCancelled).to.be.undefined;
                 });
 
-                expect(tappedRequestAndResponse?.[1]).to.include({
-                    statusCode: 200,
+                it("cancelled request", async () => {
+                    await remoteServer.anyRequest().thenTimeout();
+
+                    let tappedRequest: InitiatedRequest & { body: OngoingBody } | undefined;
+                    let tappedRequestFailed: [InitiatedRequest & { body: OngoingBody }, any] | undefined;
+                    let tappedRequestAndResponse: [InitiatedRequest & { body: OngoingBody }, InitiatedResponse & { body: OngoingBody } | null] | undefined;
+                    let tappedRequestCancelled: InitiatedRequest & { body: OngoingBody } | undefined;
+
+                    await server.get(remoteServer.url).thenPassThrough({
+                        tapRequest: req => { tappedRequest = req; },
+                        tapResponse: (req, res) => { tappedRequestAndResponse = [req, res]; },
+                        tapRequestFailed: (req, error) => { tappedRequestFailed = [req, error]; },
+                        tapRequestCancelled: req => { tappedRequestCancelled = req; }
+                    });
+
+                    await Promise.all([
+                        request.get(remoteServer.url, { timeout: 100 }).catch((e) => e),
+                        new Promise(r => server.on('abort', r)),
+                    ]);
+
+                    expect(tappedRequest).to.be.ok;
+                    expect(tappedRequestAndResponse).to.be.undefined;
+                    expect(tappedRequestFailed).to.be.undefined;
+                    expect(tappedRequestCancelled).to.be.equal(tappedRequest);
                 });
-                expect(tappedRequestAndResponse?.[1]?.headers).to.include.keys('content-type', 'content-length');
-                expect(await tappedRequestAndResponse?.[1]?.body.asText()).to.include(
-                    "This domain is for use in illustrative examples in documents."
-                );
             });
 
             it("should be able to pass through request headers", async () => {
