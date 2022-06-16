@@ -291,6 +291,7 @@ export function buildInitiatedRequest(request: OngoingRequest): InitiatedRequest
             'remoteIpAddress',
             'hostname',
             'headers',
+            'rawHeaders',
             'tags'
         ),
         headers: cleanUpHeaders(request.headers),

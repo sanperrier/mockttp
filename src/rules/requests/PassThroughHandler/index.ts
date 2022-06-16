@@ -122,6 +122,12 @@ export interface PassThroughHandlerOptions {
     ignoreHostHttpsErrors?: string[];
 
     /**
+     * Force using raw request headers,
+     * this will disable any transformations to headers
+     */
+    forceUseRawHeaders?: boolean;
+
+    /**
      * If host closes socket unexpectedly (ECONNRESET error), proxy should:  
      * if `true` - reply with `502` status code,
      * if `false` - just close client socket (replicate host behaviour).
@@ -190,15 +196,15 @@ export interface PassThroughHandlerOptions {
      * A callback that will be passed client request (any transformations ignored) and error in case request failed
      * @note is not implemented for remote client
      */
-    tapRequestFailed?: (req: InitiatedRequest & { body: OngoingBody }, error: any) => MaybePromise<void>;
+     tapRequestFailed?: (req: InitiatedRequest & { body: OngoingBody }, error: any) => MaybePromise<void>;
 
-    /**
-     * A callback that will be passed client request (any transformations ignored) in case request was cancelled by client
-     * @note is not implemented for remote client
-     */
-    tapRequestCancelled?: (req: InitiatedRequest & { body: OngoingBody }) => MaybePromise<void>;
+     /**
+      * A callback that will be passed client request (any transformations ignored) in case request was cancelled by client
+      * @note is not implemented for remote client
+      */
+     tapRequestCancelled?: (req: InitiatedRequest & { body: OngoingBody }) => MaybePromise<void>;
 
-    /**
+     /**
      * A set of data to automatically transform a request. This includes properties
      * to support many transformation common use cases.
      *
@@ -381,6 +387,7 @@ interface SerializedPassThroughData {
     proxyConfig?: SerializedProxyConfig;
     ignoreHostCertificateErrors?: string[]; // Doesn't match option name, backward compat
     handleConnectionResetAs502: boolean;
+    forceUseRawHeaders: boolean;
     clientCertificateHostMap?: { [host: string]: { pfx: string, passphrase?: string } };
     lookupOptions?: PassThroughLookupOptions;
 
@@ -418,6 +425,7 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
 
     public readonly ignoreHostHttpsErrors: string[] = [];
     public readonly handleConnectionResetAs502: boolean;
+    public readonly forceUseRawHeaders: boolean;
     public readonly clientCertificateHostMap: {
         [host: string]: { pfx: Buffer, passphrase?: string }
     };
@@ -539,6 +547,7 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
         }
 
         this.handleConnectionResetAs502 = options.handleConnectionResetAs502 ?? false;
+        this.forceUseRawHeaders = options.forceUseRawHeaders ?? false;
 
         this.lookupOptions = options.lookupOptions;
         this.clientCertificateHostMap = options.clientCertificateHostMap || {};
@@ -892,7 +901,9 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
                     port,
                     family,
                     path,
-                    headers,
+                    headers: this.forceUseRawHeaders
+                        ? clientReq.rawHeaders as any // hack to use raw headers as is
+                        : headers,
                     lookup: this.lookup() as typeof dns.lookup,
                     // ^ Cast required to handle __promisify__ type hack in the official Node types
                     agent,
@@ -1283,6 +1294,7 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
             lookupOptions: this.lookupOptions,
             ignoreHostCertificateErrors: this.ignoreHostHttpsErrors,
             handleConnectionResetAs502: this.handleConnectionResetAs502,
+            forceUseRawHeaders: this.forceUseRawHeaders,
             clientCertificateHostMap: _.mapValues(this.clientCertificateHostMap,
                 ({ pfx, passphrase }) => ({ pfx: serializeBuffer(pfx), passphrase })
             ),
@@ -1415,6 +1427,7 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
             lookupOptions: data.lookupOptions,
             ignoreHostHttpsErrors: data.ignoreHostCertificateErrors,
             handleConnectionResetAs502: data.handleConnectionResetAs502,
+            forceUseRawHeaders: data.forceUseRawHeaders,
             clientCertificateHostMap: _.mapValues(data.clientCertificateHostMap,
                 ({ pfx, passphrase }) => ({ pfx: deserializeBuffer(pfx), passphrase })
             ),

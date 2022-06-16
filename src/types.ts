@@ -48,6 +48,7 @@ export interface Request {
     hostname?: string;
 
     headers: Headers;
+    rawHeaders: string[]
 
     timingEvents: TimingEvents | {};
     tags: string[];
