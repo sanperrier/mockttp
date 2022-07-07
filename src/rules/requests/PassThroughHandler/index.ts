@@ -29,7 +29,6 @@ import {
     CompletedRequest,
     OngoingResponse,
     CompletedBody,
-    Explainable,
     InitiatedRequest,
     OngoingBody,
     InitiatedResponse
@@ -119,7 +118,7 @@ export interface PassThroughHandlerOptions {
      * A list of hostnames for which server certificate and TLS version errors
      * should be ignored (none, by default).
      */
-    ignoreHostHttpsErrors?: string[];
+    ignoreHostHttpsErrors?: boolean | Array<string | RegExp>;
 
     /**
      * Force using raw request headers,
@@ -196,25 +195,25 @@ export interface PassThroughHandlerOptions {
      */
     tapRequestFailed?: (req: InitiatedRequest & { body: OngoingBody }, error: any) => MaybePromise<void>;
 
-     /**
-      * A callback that will be passed client request (any transformations ignored) in case request was cancelled by client
-      * @note is not implemented for remote client
-      */
+    /**
+     * A callback that will be passed client request (any transformations ignored) in case request was cancelled by client
+     * @note is not implemented for remote client
+     */
     tapRequestCancelled?: (req: InitiatedRequest & { body: OngoingBody }) => MaybePromise<void>;
 
-     /**
-     * A set of data to automatically transform a request. This includes properties
-     * to support many transformation common use cases.
-     *
-     * For advanced cases, a custom callback using beforeRequest can be used instead.
-     * Using this field however where possible is typically simpler, more declarative,
-     * and can be more performant. The two options are mutually exclusive: you cannot
-     * use both transformRequest and a beforeRequest callback.
-     *
-     * Only one transformation for each target (method, headers & body) can be
-     * specified. If more than one is specified then an error will be thrown when the
-     * rule is registered.
-     */
+    /**
+    * A set of data to automatically transform a request. This includes properties
+    * to support many transformation common use cases.
+    *
+    * For advanced cases, a custom callback using beforeRequest can be used instead.
+    * Using this field however where possible is typically simpler, more declarative,
+    * and can be more performant. The two options are mutually exclusive: you cannot
+    * use both transformRequest and a beforeRequest callback.
+    *
+    * Only one transformation for each target (method, headers & body) can be
+    * specified. If more than one is specified then an error will be thrown when the
+    * rule is registered.
+    */
     transformRequest?: RequestTransform;
 
     /**
@@ -383,7 +382,7 @@ interface SerializedPassThroughData {
     forwardToLocation?: string;
     forwarding?: ForwardingOptions;
     proxyConfig?: SerializedProxyConfig;
-    ignoreHostCertificateErrors?: string[]; // Doesn't match option name, backward compat
+    ignoreHostCertificateErrors?: boolean | Array<string | { source: string }>; // Doesn't match option name, backward compat
     handleConnectionResetAs502: boolean;
     forceUseRawHeaders: boolean;
     clientCertificateHostMap?: { [host: string]: { pfx: string, passphrase?: string } };
@@ -421,7 +420,7 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
 
     public readonly forwarding?: ForwardingOptions;
 
-    public readonly ignoreHostHttpsErrors: string[] = [];
+    public readonly ignoreHostHttpsErrors: boolean | Array<string | RegExp> = false;
     public readonly handleConnectionResetAs502: boolean;
     public readonly forceUseRawHeaders: boolean;
     public readonly clientCertificateHostMap: {
@@ -537,11 +536,11 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
 
         this.forwarding = forwarding;
 
-        this.ignoreHostHttpsErrors = options.ignoreHostHttpsErrors ||
-            options.ignoreHostCertificateErrors ||
-            [];
-        if (!Array.isArray(this.ignoreHostHttpsErrors)) {
-            throw new Error("ignoreHostHttpsErrors must be an array");
+        this.ignoreHostHttpsErrors = options.ignoreHostHttpsErrors ??
+            options.ignoreHostCertificateErrors ??
+            false;
+        if (!Array.isArray(this.ignoreHostHttpsErrors) && !(typeof this.ignoreHostHttpsErrors === 'boolean')) {
+            throw new Error("ignoreHostHttpsErrors must be an array or boolean");
         }
 
         this.handleConnectionResetAs502 = options.handleConnectionResetAs502 ?? false;
@@ -799,8 +798,12 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
         const hostWithPort = `${hostname}:${port}`
 
         // Ignore cert errors if the host+port or whole hostname is whitelisted
-        const strictHttpsChecks = !_.includes(this.ignoreHostHttpsErrors, hostname) &&
-            !_.includes(this.ignoreHostHttpsErrors, hostWithPort);
+        const strictHttpsChecks = typeof this.ignoreHostHttpsErrors === 'boolean'
+            ? !this.ignoreHostHttpsErrors
+            : !this.ignoreHostHttpsErrors.some(v => typeof v === 'string'
+                ? v === hostname || v === hostWithPort
+                : hostname && v.test(hostname) || v.test(hostWithPort)
+            )
 
         // Use a client cert if it's listed for the host+port or whole hostname
         const clientCert = this.clientCertificateHostMap[hostWithPort] ||
@@ -1290,7 +1293,16 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
             } : {},
             proxyConfig: serializeProxyConfig(this.proxyConfig, channel),
             lookupOptions: this.lookupOptions,
-            ignoreHostCertificateErrors: this.ignoreHostHttpsErrors,
+            ignoreHostCertificateErrors:
+                typeof this.ignoreHostHttpsErrors === 'boolean'
+                    ? this.ignoreHostHttpsErrors
+                    : this.ignoreHostHttpsErrors.map(v =>
+                        typeof v === 'string'
+                            ? v
+                            : {
+                                source: v.source,
+                            }
+                    ),
             handleConnectionResetAs502: this.handleConnectionResetAs502,
             forceUseRawHeaders: this.forceUseRawHeaders,
             clientCertificateHostMap: _.mapValues(this.clientCertificateHostMap,
@@ -1423,7 +1435,16 @@ export class PassThroughHandler extends Serializable implements RequestHandler {
             } : {},
             forwarding: data.forwarding,
             lookupOptions: data.lookupOptions,
-            ignoreHostHttpsErrors: data.ignoreHostCertificateErrors,
+            ignoreHostHttpsErrors:
+                typeof data.ignoreHostCertificateErrors === 'boolean'
+                    ? data.ignoreHostCertificateErrors
+                    : data.ignoreHostCertificateErrors?.map(
+                        v => typeof v === 'string'
+                            ? v
+                            : typeof v === 'object' && typeof v.source === 'string'
+                                ? new RegExp(v.source)
+                                : ''
+                    ),
             handleConnectionResetAs502: data.handleConnectionResetAs502,
             forceUseRawHeaders: data.forceUseRawHeaders,
             clientCertificateHostMap: _.mapValues(data.clientCertificateHostMap,

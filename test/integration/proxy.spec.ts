@@ -1002,6 +1002,45 @@ nodeOnly(() => {
 
                         expect(response.statusCode).to.equal(502);
                     });
+
+                    it("should allow passing through requests if `ignoreHostHttpsErrors` is `true`", async () => {
+                        await server.anyRequest().thenPassThrough({
+                            ignoreHostHttpsErrors: true,
+                        });
+
+                        let response = await request.get(`https://localhost:${oldServerPort}`, {
+                            resolveWithFullResponse: true,
+                            simple: false
+                        });
+
+                        expect(response.statusCode).to.equal(200);
+                    });
+
+                    it("should refuse to pass through requests if `ignoreHostHttpsErrors` is `false`", async () => {
+                        await server.anyRequest().thenPassThrough({
+                            ignoreHostHttpsErrors: false,
+                        });
+
+                        let response = await request.get(`https://localhost:${oldServerPort}`, {
+                            resolveWithFullResponse: true,
+                            simple: false
+                        });
+
+                        expect(response.statusCode).to.equal(502);
+                    });
+
+                    it("should allow passing through requests if the host matches listed regexp", async () => {
+                        await server.anyRequest().thenPassThrough({
+                            ignoreHostHttpsErrors: [/local.*/i],
+                        });
+
+                        let response = await request.get(`https://localhost:${oldServerPort}`, {
+                            resolveWithFullResponse: true,
+                            simple: false
+                        });
+
+                        expect(response.statusCode).to.equal(200);
+                    });
                 });
 
                 describe("talking to a target server that requires a client cert", () => {
